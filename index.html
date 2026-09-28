@@ -749,6 +749,8 @@
 
     // ESTADO DE LA APP
     const STORAGE_KEY = 'cruz_roja_lujan_db_v2';
+    const SHEETS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbyeC5_-fJLCgdsIFaIyyAITW2PH7MQFNUK2msFEUNyXf5DU9KIrmmlJnIvWRXv7corY/exec';
+    const SYNC_INTERVAL_MS = 10 * 60 * 1000; // 10 minutos
     let appState = {
       puesto: '',
       operador: '',
@@ -1125,6 +1127,46 @@
       document.body.removeChild(link);
     }
 
+    // SINCRONIZACIÓN AUTOMÁTICA CON GOOGLE SHEETS
+    function buildSyncPayload() {
+      const registros = [];
+      Object.keys(appState.dataByHour).forEach(hora => {
+        const hourData = appState.dataByHour[hora];
+        OFFICIAL_CATEGORIES.forEach(cat => {
+          const item = hourData[cat.id];
+          const cantidad = item?.count || 0;
+          if (cantidad >= 1) {
+            registros.push({
+              hora,
+              catId: cat.id,
+              catName: cat.name,
+              cantidad,
+              detalle: item.details || ''
+            });
+          }
+        });
+      });
+
+      return {
+        puesto: appState.puesto,
+        operador: appState.operador,
+        fecha: new Date().toLocaleDateString('es-AR'),
+        registros
+      };
+    }
+
+    function syncToSheets() {
+      const payload = buildSyncPayload();
+      if (payload.registros.length === 0) return;
+
+      fetch(SHEETS_WEBAPP_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      }).catch(err => console.warn('Error al sincronizar con Sheets:', err));
+    }
+
     // CONFIGURACIÓN DE EVENT LISTENERS AL CARGAR
     window.addEventListener('DOMContentLoaded', () => {
       initOrLoadState();
@@ -1172,6 +1214,7 @@
       });
 
       startClockSync();
+      setInterval(syncToSheets, SYNC_INTERVAL_MS);
       renderScreen();
     });
   </script>
