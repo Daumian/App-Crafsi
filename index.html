@@ -769,6 +769,9 @@
     const STORAGE_KEY = 'cruz_roja_lujan_db_v2';
     const SHEETS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbyeC5_-fJLCgdsIFaIyyAITW2PH7MQFNUK2msFEUNyXf5DU9KIrmmlJnIvWRXv7corY/exec';
     const SYNC_INTERVAL_MS = 10 * 60 * 1000; // 10 minutos
+    // Token compartido con el Apps Script: no es una seguridad fuerte (queda visible en el código),
+    // pero corta en seco a bots que escanean URLs de Apps Script al voleo.
+    const SYNC_SECRET = '73f9b7e5d9136e94e265d271556ffdb7b94c3f67';
     let appState = {
       puesto: '',
       operador: '',
@@ -1243,6 +1246,7 @@
       });
 
       return {
+        secret: SYNC_SECRET,
         puesto: appState.puesto,
         operador: appState.operador,
         registros
