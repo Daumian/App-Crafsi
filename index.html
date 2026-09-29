@@ -218,6 +218,74 @@
       padding: 8px 12px 16px 12px;
     }
 
+    .section-label {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--cr-gray-dark);
+      margin: 6px 4px 6px 4px;
+    }
+    .section-label:not(:first-child) {
+      margin-top: 14px;
+    }
+
+    /* ACORDEÓN DE GRUPOS DE CATEGORÍAS */
+    .accordion-group {
+      margin-bottom: 8px;
+    }
+    .accordion-header {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: #FFFFFF;
+      border: 1px solid var(--cr-gray-border);
+      border-radius: var(--radius-md);
+      padding: 13px 14px;
+      font-family: inherit;
+      cursor: pointer;
+      box-shadow: var(--shadow-sm);
+    }
+    .accordion-header.has-value {
+      border-color: #BFDBFE;
+      background: #FDFEFF;
+    }
+    .accordion-header:active {
+      background-color: var(--cr-gray-light);
+    }
+    .accordion-header-label {
+      font-size: 14px;
+      font-weight: 700;
+      color: #212529;
+      flex: 1;
+      text-align: left;
+    }
+    .accordion-badge {
+      background: var(--cr-teal-bg);
+      color: var(--cr-teal);
+      font-size: 12px;
+      font-weight: 800;
+      padding: 2px 9px;
+      border-radius: 12px;
+      border: 1px solid #CFE6E8;
+    }
+    .accordion-chevron {
+      font-size: 18px;
+      font-weight: 700;
+      color: #868E96;
+      display: inline-block;
+      transform: rotate(0deg);
+      transition: transform 0.2s ease;
+    }
+    .accordion-chevron.open {
+      transform: rotate(90deg);
+    }
+    .accordion-body {
+      padding-top: 8px;
+    }
+
     .category-item {
       background: #FFFFFF;
       border-radius: var(--radius-md);
@@ -566,6 +634,59 @@
     .form-group input:focus {
       border-color: var(--cr-red);
     }
+    .input-with-history {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .input-with-history input {
+      flex: 1;
+    }
+    .btn-history-toggle {
+      background: #F1F3F5;
+      border: none;
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      color: var(--cr-gray-dark);
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: transform 0.15s ease;
+    }
+    .btn-history-toggle:active {
+      background: #E2E6EA;
+    }
+    .btn-history-toggle.open {
+      transform: rotate(180deg);
+    }
+    .history-chips {
+      display: none;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .history-chip {
+      background: var(--cr-teal-bg);
+      border: 1px solid #CFE6E8;
+      color: var(--cr-teal);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 10px;
+      border-radius: 14px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .history-chip:active {
+      background: #CFE6E8;
+    }
+    .history-empty {
+      font-size: 11px;
+      color: #9E9E9E;
+    }
     .btn-primary {
       background: var(--cr-red);
       color: #FFFFFF;
@@ -628,12 +749,20 @@
 
       <div class="form-group">
         <label>PUESTO SANITARIO / MÓVIL</label>
-        <input type="text" id="inputPuesto" placeholder="Ej: Puesto 1 - Rodríguez / Móvil 3" />
+        <div class="input-with-history">
+          <input type="text" id="inputPuesto" placeholder="Ej: Puesto 1 - Rodríguez / Móvil 3" />
+          <button type="button" class="btn-history-toggle" id="btnTogglePuestoHistory" title="Ver puestos usados antes">▾</button>
+        </div>
+        <div class="history-chips" id="puestoHistoryChips"></div>
       </div>
 
       <div class="form-group">
         <label>NOMBRE DEL OPERADOR / VOLUNTARIO</label>
-        <input type="text" id="inputOperador" placeholder="Ej: Melina Blanco" />
+        <div class="input-with-history">
+          <input type="text" id="inputOperador" placeholder="Ej: Melina Blanco" />
+          <button type="button" class="btn-history-toggle" id="btnToggleOperadorHistory" title="Ver operadores usados antes">▾</button>
+        </div>
+        <div class="history-chips" id="operadorHistoryChips"></div>
       </div>
 
       <button type="button" class="btn-primary" id="btnStartSession">Iniciar Registro de Jornada</button>
@@ -765,10 +894,25 @@
       { id: 21, name: "Otros (detallar)" }
     ];
 
+    // Categorías más comunes en la caminata a Luján: siempre visibles arriba, sin acordeón
+    const PINNED_CATEGORY_IDS = [1, 3, 5, 21]; // Ampollas, Traumatismos Musculares LEVES (calambres/dolores de piernas), Hipotensiones, Otros (detallar)
+
+    // El resto de las categorías, agrupadas por acordeón para ocupar menos espacio
+    const CATEGORY_GROUPS = [
+      { id: 'traumatismos', label: 'Traumatismos', catIds: [4, 19, 20] },
+      { id: 'termicas', label: 'Térmicas / Ambientales', catIds: [11, 12, 13, 18] },
+      { id: 'cardio', label: 'Cardiovascular', catIds: [2, 10, 15] },
+      { id: 'heridas', label: 'Piel y Heridas', catIds: [7, 8, 9] },
+      { id: 'otros_sistemas', label: 'Otros Sistemas', catIds: [6, 14, 16, 17] }
+    ];
+
     // ESTADO DE LA APP
     const STORAGE_KEY = 'cruz_roja_lujan_db_v2';
     const SHEETS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbyeC5_-fJLCgdsIFaIyyAITW2PH7MQFNUK2msFEUNyXf5DU9KIrmmlJnIvWRXv7corY/exec';
     const SYNC_INTERVAL_MS = 10 * 60 * 1000; // 10 minutos
+    // Token compartido con el Apps Script: no es una seguridad fuerte (queda visible en el código),
+    // pero corta en seco a bots que escanean URLs de Apps Script al voleo.
+    const SYNC_SECRET = '73f9b7e5d9136e94e265d271556ffdb7b94c3f67';
     let appState = {
       puesto: '',
       operador: '',
@@ -778,7 +922,8 @@
       currentRealDate: null,
       currentRealHour: null,
       isEditUnlocked: false,
-      filterActiveOnly: false
+      filterActiveOnly: false,
+      expandedGroups: {}
     };
 
     // FORMATEADORES DE FECHA/HORA
@@ -833,6 +978,9 @@
       if (!appState.dataByDate) {
         appState.dataByDate = {};
       }
+      if (!appState.expandedGroups) {
+        appState.expandedGroups = {};
+      }
 
       appState.currentRealDate = todayISO;
       appState.currentRealHour = currentH;
@@ -876,12 +1024,79 @@
       appState.puesto = puestoVal || 'Puesto General';
       appState.operador = opVal || 'Voluntario';
 
+      if (puestoVal) saveToHistory('puestos', puestoVal);
+      if (opVal) saveToHistory('operadores', opVal);
+
       saveState();
 
       const modal = document.getElementById('startModal');
       if (modal) {
         modal.style.display = 'none';
       }
+    }
+
+    // HISTORIAL DE PUESTOS/OPERADORES (persiste aparte del appState, sobrevive a "Reiniciar Guardia")
+    const HISTORY_KEY = 'cruz_roja_lujan_history_v1';
+    const MAX_HISTORY_ITEMS = 12;
+
+    function loadHistory() {
+      try {
+        const raw = localStorage.getItem(HISTORY_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch (e) {
+        console.warn('No se pudo leer el historial:', e);
+      }
+      return { puestos: [], operadores: [] };
+    }
+
+    function saveToHistory(field, value) {
+      try {
+        const history = loadHistory();
+        const list = history[field] || [];
+        const idx = list.indexOf(value);
+        if (idx > -1) list.splice(idx, 1);
+        list.unshift(value);
+        history[field] = list.slice(0, MAX_HISTORY_ITEMS);
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+      } catch (e) {
+        console.warn('No se pudo guardar el historial:', e);
+      }
+    }
+
+    function toggleHistoryChips(chipsId, field, inputId, toggleBtnId) {
+      const chipsEl = document.getElementById(chipsId);
+      const toggleBtn = document.getElementById(toggleBtnId);
+      const isOpen = chipsEl.style.display === 'flex';
+
+      if (isOpen) {
+        chipsEl.style.display = 'none';
+        toggleBtn.classList.remove('open');
+        return;
+      }
+
+      const history = loadHistory();
+      const list = history[field] || [];
+      chipsEl.innerHTML = '';
+
+      if (list.length === 0) {
+        chipsEl.innerHTML = '<span class="history-empty">Todavía no hay usados antes</span>';
+      } else {
+        list.forEach(val => {
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'history-chip';
+          chip.textContent = val;
+          chip.onclick = () => {
+            document.getElementById(inputId).value = val;
+            chipsEl.style.display = 'none';
+            toggleBtn.classList.remove('open');
+          };
+          chipsEl.appendChild(chip);
+        });
+      }
+
+      chipsEl.style.display = 'flex';
+      toggleBtn.classList.add('open');
     }
 
     // CONTROL AUTOMÁTICO DE RELOJ DEL SISTEMA
@@ -940,6 +1155,10 @@
     }
 
     // ACTUALIZACIONES UI ESPECÍFICAS
+    function findGroupForCategory(catId) {
+      return CATEGORY_GROUPS.find(g => g.catIds.includes(catId));
+    }
+
     function updateCategoryUI(catId) {
       const inputEl = document.getElementById(`count-input-${catId}`);
       const btnMinus = document.getElementById(`btn-minus-${catId}`);
@@ -960,6 +1179,22 @@
           detailsBox.style.display = count > 0 ? 'block' : 'none';
         }
       }
+
+      // Si la categoría pertenece a un grupo del acordeón, refrescamos su badge/estado
+      const group = findGroupForCategory(catId);
+      if (group) {
+        const headerEl = document.getElementById(`accordion-header-${group.id}`);
+        const badgeEl = document.getElementById(`accordion-badge-${group.id}`);
+        if (headerEl && badgeEl) {
+          let groupTotal = 0;
+          group.catIds.forEach(id => { groupTotal += hourData[id]?.count || 0; });
+          badgeEl.textContent = groupTotal;
+          badgeEl.style.display = groupTotal > 0 ? 'inline-block' : 'none';
+          if (groupTotal > 0) headerEl.classList.add('has-value');
+          else headerEl.classList.remove('has-value');
+        }
+      }
+
       updateTotals();
     }
 
@@ -1011,29 +1246,95 @@
 
       const hourData = appState.dataByDate[selDate]?.[selHour] || {};
 
-      OFFICIAL_CATEGORIES.forEach(cat => {
-        const count = hourData[cat.id]?.count || 0;
-        const details = hourData[cat.id]?.details || '';
+      // TOP 3: categorías más comunes en la caminata, siempre visibles arriba
+      const pinnedCats = PINNED_CATEGORY_IDS
+        .map(id => OFFICIAL_CATEGORIES.find(c => c.id === id))
+        .filter(cat => !(appState.filterActiveOnly && (hourData[cat.id]?.count || 0) === 0));
 
-        // Filtro si solo se quieren ver categorías con datos
-        if (appState.filterActiveOnly && count === 0) {
-          return;
+      if (pinnedCats.length > 0) {
+        const label = document.createElement('div');
+        label.className = 'section-label';
+        label.textContent = 'Acceso rápido';
+        container.appendChild(label);
+        pinnedCats.forEach(cat => {
+          container.appendChild(renderCategoryItem(cat, hourData, locked));
+        });
+      }
+
+      // RESTO: agrupadas en acordeón para ocupar menos espacio
+      const groupsWithContent = CATEGORY_GROUPS.map(group => {
+        const catsInGroup = group.catIds.map(id => OFFICIAL_CATEGORIES.find(c => c.id === id));
+        const visibleCats = appState.filterActiveOnly
+          ? catsInGroup.filter(cat => (hourData[cat.id]?.count || 0) > 0)
+          : catsInGroup;
+        return { group, catsInGroup, visibleCats };
+      }).filter(g => g.visibleCats.length > 0);
+
+      if (groupsWithContent.length > 0) {
+        const label = document.createElement('div');
+        label.className = 'section-label';
+        label.textContent = 'Otras categorías';
+        container.appendChild(label);
+      }
+
+      groupsWithContent.forEach(({ group, catsInGroup, visibleCats }) => {
+        let groupTotal = 0;
+        catsInGroup.forEach(cat => { groupTotal += hourData[cat.id]?.count || 0; });
+        const isExpanded = !!appState.expandedGroups[group.id];
+
+        const groupEl = document.createElement('div');
+        groupEl.className = 'accordion-group';
+
+        const headerEl = document.createElement('button');
+        headerEl.type = 'button';
+        headerEl.id = `accordion-header-${group.id}`;
+        headerEl.className = `accordion-header ${groupTotal > 0 ? 'has-value' : ''}`;
+        headerEl.innerHTML = `
+          <span class="accordion-header-label">${group.label}</span>
+          <span class="accordion-badge" id="accordion-badge-${group.id}" style="display: ${groupTotal > 0 ? 'inline-block' : 'none'}">${groupTotal}</span>
+          <span class="accordion-chevron ${isExpanded ? 'open' : ''}">›</span>
+        `;
+        headerEl.onclick = () => {
+          appState.expandedGroups[group.id] = !appState.expandedGroups[group.id];
+          saveState();
+          renderScreen();
+        };
+        groupEl.appendChild(headerEl);
+
+        if (isExpanded) {
+          const bodyEl = document.createElement('div');
+          bodyEl.className = 'accordion-body';
+          visibleCats.forEach(cat => {
+            bodyEl.appendChild(renderCategoryItem(cat, hourData, locked));
+          });
+          groupEl.appendChild(bodyEl);
         }
 
-        const item = document.createElement('div');
-        item.className = `category-item ${count > 0 ? 'has-value' : ''}`;
-        item.id = `cat-item-${cat.id}`;
+        container.appendChild(groupEl);
+      });
 
-        let detailsHTML = '';
-        if (cat.id === 21) {
-          detailsHTML = `
-            <div class="cat-details-expand" id="cat-details-21" style="display: ${count > 0 ? 'block' : 'none'}">
-              <textarea placeholder="Detallar patología, observaciones o derivaciones..." ${locked ? 'readonly' : ''} oninput="updateDetails(21, this.value)">${details}</textarea>
-            </div>
-          `;
-        }
+      updateTotals();
+    }
 
-        item.innerHTML = `
+    // Arma la card de una categoría individual (contador +/-, y textarea de detalle para "Otros")
+    function renderCategoryItem(cat, hourData, locked) {
+      const count = hourData[cat.id]?.count || 0;
+      const details = hourData[cat.id]?.details || '';
+
+      const item = document.createElement('div');
+      item.className = `category-item ${count > 0 ? 'has-value' : ''}`;
+      item.id = `cat-item-${cat.id}`;
+
+      let detailsHTML = '';
+      if (cat.id === 21) {
+        detailsHTML = `
+          <div class="cat-details-expand" id="cat-details-21" style="display: ${count > 0 ? 'block' : 'none'}">
+            <textarea placeholder="Detallar patología, observaciones o derivaciones..." ${locked ? 'readonly' : ''} oninput="updateDetails(21, this.value)">${details}</textarea>
+          </div>
+        `;
+      }
+
+      item.innerHTML = `
           <div class="cat-main-row">
             <div class="cat-label">
               <span class="cat-num">${cat.id}.</span>${cat.name}
@@ -1047,10 +1348,7 @@
           ${detailsHTML}
         `;
 
-        container.appendChild(item);
-      });
-
-      updateTotals();
+      return item;
     }
 
     // NAVEGACIÓN ENTRE HORAS (cruza fechas, sin límite hacia atrás)
@@ -1243,6 +1541,7 @@
       });
 
       return {
+        secret: SYNC_SECRET,
         puesto: appState.puesto,
         operador: appState.operador,
         registros
@@ -1270,6 +1569,14 @@
       if (btnStart) {
         btnStart.addEventListener('click', handleStartSession);
       }
+
+      // Historial de puestos/operadores usados antes
+      document.getElementById('btnTogglePuestoHistory').addEventListener('click', () => {
+        toggleHistoryChips('puestoHistoryChips', 'puestos', 'inputPuesto', 'btnTogglePuestoHistory');
+      });
+      document.getElementById('btnToggleOperadorHistory').addEventListener('click', () => {
+        toggleHistoryChips('operadorHistoryChips', 'operadores', 'inputOperador', 'btnToggleOperadorHistory');
+      });
 
       // Navegación de horas
       document.getElementById('btnPrevHour').addEventListener('click', () => changeHour(-1));
