@@ -114,6 +114,20 @@
       color: var(--cr-gray-dark);
     }
 
+    /* FECHA (CHICA, ARRIBA DEL RELOJ) */
+    .date-display {
+      text-align: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--cr-gray-dark);
+      margin-top: 4px;
+      cursor: pointer;
+      text-transform: capitalize;
+    }
+    .date-display:active {
+      opacity: 0.6;
+    }
+
     /* CONTROL DE HORA */
     .time-selector-bar {
       display: flex;
@@ -657,6 +671,10 @@
       </button>
     </div>
 
+    <!-- FECHA (chica, tocable para elegir otra) -->
+    <div class="date-display" id="dateDisplay" title="Tocar para elegir otra fecha">--/--/----</div>
+    <input type="date" id="datePickerInput" style="position:absolute; width:0; height:0; opacity:0; pointer-events:none;" />
+
     <!-- NAVEGADOR DE HORA -->
     <div class="time-selector-bar">
       <button class="time-arrow" id="btnPrevHour" aria-label="Hora anterior">‹</button>
@@ -754,17 +772,43 @@
     let appState = {
       puesto: '',
       operador: '',
-      dataByHour: {},
+      dataByDate: {},
+      selectedDate: null,
       selectedHour: null,
+      currentRealDate: null,
       currentRealHour: null,
       isEditUnlocked: false,
       filterActiveOnly: false
     };
 
-    // FORMATEADOR DE HORA
+    // FORMATEADORES DE FECHA/HORA
     function formatHourString(date) {
       const h = String(date.getHours()).padStart(2, '0');
       return `${h}:00`;
+    }
+
+    function formatDateISO(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
+    function formatDateDisplay(iso) {
+      const [y, m, d] = iso.split('-');
+      return `${d}/${m}/${y}`;
+    }
+
+    function dateHourToTimestamp(dateISO, hour) {
+      const [y, m, d] = dateISO.split('-').map(Number);
+      const h = parseInt(hour, 10);
+      return new Date(y, m - 1, d, h).getTime();
+    }
+
+    function ensureHourData(dateISO, hour) {
+      if (!appState.dataByDate[dateISO]) appState.dataByDate[dateISO] = {};
+      if (!appState.dataByDate[dateISO][hour]) appState.dataByDate[dateISO][hour] = createEmptyHourData();
+      return appState.dataByDate[dateISO][hour];
     }
 
     function initOrLoadState() {
@@ -778,14 +822,25 @@
       }
 
       const now = new Date();
+      const todayISO = formatDateISO(now);
       const currentH = formatHourString(now);
-      appState.currentRealHour = currentH;
 
-      if (!appState.dataByHour[currentH]) {
-        appState.dataByHour[currentH] = createEmptyHourData();
+      // Migración desde el formato anterior (sin fecha, todo era "hoy")
+      if (appState.dataByHour && !appState.dataByDate) {
+        appState.dataByDate = { [todayISO]: appState.dataByHour };
+        delete appState.dataByHour;
+      }
+      if (!appState.dataByDate) {
+        appState.dataByDate = {};
       }
 
-      if (!appState.selectedHour) {
+      appState.currentRealDate = todayISO;
+      appState.currentRealHour = currentH;
+
+      ensureHourData(todayISO, currentH);
+
+      if (!appState.selectedDate || !appState.selectedHour) {
+        appState.selectedDate = todayISO;
         appState.selectedHour = currentH;
       }
 
@@ -832,12 +887,13 @@
     // CONTROL AUTOMÁTICO DE RELOJ DEL SISTEMA
     function startClockSync() {
       setInterval(() => {
-        const nowH = formatHourString(new Date());
-        if (nowH !== appState.currentRealHour) {
+        const now = new Date();
+        const nowDate = formatDateISO(now);
+        const nowH = formatHourString(now);
+        if (nowDate !== appState.currentRealDate || nowH !== appState.currentRealHour) {
+          appState.currentRealDate = nowDate;
           appState.currentRealHour = nowH;
-          if (!appState.dataByHour[nowH]) {
-            appState.dataByHour[nowH] = createEmptyHourData();
-          }
+          ensureHourData(nowDate, nowH);
           saveState();
           renderScreen();
         }
@@ -848,7 +904,7 @@
     function updateCount(catId, delta) {
       if (isCurrentHourLocked()) return;
 
-      const hourData = appState.dataByHour[appState.selectedHour];
+      const hourData = ensureHourData(appState.selectedDate, appState.selectedHour);
       if (!hourData[catId]) hourData[catId] = { count: 0, details: '' };
 
       const newCount = Math.max(0, hourData[catId].count + delta);
@@ -861,7 +917,7 @@
       if (isCurrentHourLocked()) return;
 
       const cleanVal = Math.max(0, parseInt(value, 10) || 0);
-      const hourData = appState.dataByHour[appState.selectedHour];
+      const hourData = ensureHourData(appState.selectedDate, appState.selectedHour);
       if (!hourData[catId]) hourData[catId] = { count: 0, details: '' };
 
       hourData[catId].count = cleanVal;
@@ -871,7 +927,7 @@
 
     function updateDetails(catId, text) {
       if (isCurrentHourLocked()) return;
-      const hourData = appState.dataByHour[appState.selectedHour];
+      const hourData = ensureHourData(appState.selectedDate, appState.selectedHour);
       if (hourData[catId]) {
         hourData[catId].details = text;
         saveState();
@@ -879,8 +935,8 @@
     }
 
     function isCurrentHourLocked() {
-      const isPast = appState.selectedHour !== appState.currentRealHour;
-      return isPast && !appState.isEditUnlocked;
+      const isLive = appState.selectedDate === appState.currentRealDate && appState.selectedHour === appState.currentRealHour;
+      return !isLive && !appState.isEditUnlocked;
     }
 
     // ACTUALIZACIONES UI ESPECÍFICAS
@@ -888,7 +944,7 @@
       const inputEl = document.getElementById(`count-input-${catId}`);
       const btnMinus = document.getElementById(`btn-minus-${catId}`);
       const itemRow = document.getElementById(`cat-item-${catId}`);
-      const hourData = appState.dataByHour[appState.selectedHour];
+      const hourData = appState.dataByDate[appState.selectedDate]?.[appState.selectedHour] || {};
       const count = hourData[catId]?.count || 0;
 
       if (inputEl) inputEl.value = count;
@@ -908,15 +964,17 @@
     }
 
     function updateTotals() {
-      const hourData = appState.dataByHour[appState.selectedHour] || {};
+      const hourData = appState.dataByDate[appState.selectedDate]?.[appState.selectedHour] || {};
       let totalHour = 0;
       Object.values(hourData).forEach(item => {
         totalHour += (item.count || 0);
       });
       document.getElementById('totalHourDisplay').textContent = `Total a la hora: ${totalHour}`;
 
+      // Total de la jornada = total del día seleccionado (no de todas las fechas guardadas)
+      const dayData = appState.dataByDate[appState.selectedDate] || {};
       let totalDay = 0;
-      Object.values(appState.dataByHour).forEach(hData => {
+      Object.values(dayData).forEach(hData => {
         Object.values(hData).forEach(item => {
           totalDay += (item.count || 0);
         });
@@ -926,11 +984,13 @@
 
     // RENDER PRINCIPAL DE CATEGORÍAS
     function renderScreen() {
+      const selDate = appState.selectedDate;
       const selHour = appState.selectedHour;
-      const isLive = selHour === appState.currentRealHour;
+      const isLive = selDate === appState.currentRealDate && selHour === appState.currentRealHour;
       const locked = isCurrentHourLocked();
 
-      // Reloj y badges
+      // Fecha, reloj y badges
+      document.getElementById('dateDisplay').textContent = formatDateDisplay(selDate);
       document.getElementById('timeDisplay').textContent = selHour;
       const badgeStatus = document.getElementById('badgeStatus');
       const badgeText = document.getElementById('badgeText');
@@ -949,7 +1009,7 @@
       const container = document.getElementById('categoriesContainer');
       container.innerHTML = '';
 
-      const hourData = appState.dataByHour[selHour] || {};
+      const hourData = appState.dataByDate[selDate]?.[selHour] || {};
 
       OFFICIAL_CATEGORIES.forEach(cat => {
         const count = hourData[cat.id]?.count || 0;
@@ -993,24 +1053,47 @@
       updateTotals();
     }
 
-    // NAVEGACIÓN ENTRE HORAS
-    function getSortedRecordedHours() {
-      const hours = Object.keys(appState.dataByHour);
-      hours.sort();
-      return hours;
+    // NAVEGACIÓN ENTRE HORAS (cruza fechas, sin límite hacia atrás)
+    function getAllDateHourEntries() {
+      const entries = [];
+      Object.keys(appState.dataByDate).sort().forEach(fecha => {
+        Object.keys(appState.dataByDate[fecha]).sort().forEach(hora => {
+          entries.push({ fecha, hora });
+        });
+      });
+      return entries;
     }
 
     function changeHour(step) {
-      const hours = getSortedRecordedHours();
-      const currentIdx = hours.indexOf(appState.selectedHour);
+      const cur = dateHourToTimestamp(appState.selectedDate, appState.selectedHour);
+      const real = dateHourToTimestamp(appState.currentRealDate, appState.currentRealHour);
+      let next = cur + step * 60 * 60 * 1000;
+      if (next > real) next = real; // no se puede navegar al futuro
 
-      if (currentIdx === -1) {
-        appState.selectedHour = appState.currentRealHour;
+      const nextDate = new Date(next);
+      appState.selectedDate = formatDateISO(nextDate);
+      appState.selectedHour = formatHourString(nextDate);
+      appState.isEditUnlocked = false;
+      renderScreen();
+    }
+
+    function openDatePicker() {
+      const input = document.getElementById('datePickerInput');
+      input.max = appState.currentRealDate;
+      input.value = appState.selectedDate;
+      if (input.showPicker) {
+        input.showPicker();
       } else {
-        const newIdx = currentIdx + step;
-        if (newIdx >= 0 && newIdx < hours.length) {
-          appState.selectedHour = hours[newIdx];
-        }
+        input.click();
+      }
+    }
+
+    function goToDate(newDate) {
+      if (!newDate || newDate > appState.currentRealDate) return;
+      appState.selectedDate = newDate;
+      // Si nos movemos a hoy y la hora seleccionada todavía no pasó, la ajustamos
+      if (appState.selectedDate === appState.currentRealDate && appState.selectedHour > appState.currentRealHour) {
+        appState.selectedHour = appState.currentRealHour;
       }
       appState.isEditUnlocked = false;
       renderScreen();
@@ -1030,10 +1113,10 @@
     function renderDrawerHistory() {
       const container = document.getElementById('drawerHistoryList');
       container.innerHTML = '';
-      const hours = getSortedRecordedHours();
+      const entries = getAllDateHourEntries();
 
-      hours.forEach(h => {
-        const hData = appState.dataByHour[h];
+      entries.forEach(({ fecha, hora }) => {
+        const hData = appState.dataByDate[fecha][hora];
         let totalH = 0;
         const activeCats = [];
 
@@ -1046,22 +1129,26 @@
           }
         });
 
+        const isSelected = fecha === appState.selectedDate && hora === appState.selectedHour;
+        const isNow = fecha === appState.currentRealDate && hora === appState.currentRealHour;
+
         const card = document.createElement('div');
-        card.className = `history-card ${h === appState.selectedHour ? 'current' : ''}`;
+        card.className = `history-card ${isSelected ? 'current' : ''}`;
         card.onclick = () => {
-          appState.selectedHour = h;
+          appState.selectedDate = fecha;
+          appState.selectedHour = hora;
           appState.isEditUnlocked = false;
           closeDrawer();
           renderScreen();
         };
 
-        let tagsHTML = activeCats.length > 0 
+        let tagsHTML = activeCats.length > 0
           ? activeCats.map(t => `<span class="tag-item">${t}</span>`).join('')
           : '<span style="font-size:11px; color:#9E9E9E;">Sin atenciones registradas</span>';
 
         card.innerHTML = `
           <div class="history-card-header">
-            <span class="history-time">${h} ${h === appState.currentRealHour ? '• (Ahora)' : ''}</span>
+            <span class="history-time">${formatDateDisplay(fecha)} ${hora} ${isNow ? '• (Ahora)' : ''}</span>
             <span class="history-count">${totalH} pac.</span>
           </div>
           <div class="history-categories-tags">
@@ -1074,7 +1161,8 @@
 
     // EXPORTACIÓN A EXCEL / CSV
     function exportToCSV() {
-      const hours = getSortedRecordedHours();
+      const entries = getAllDateHourEntries();
+      const colLabels = entries.map(e => `${formatDateDisplay(e.fecha)} ${e.hora}`);
       let csv = '\uFEFF'; // BOM para compatibilidad con tildes en Excel
       csv += `CRUZ ROJA ARGENTINA - FILIAL SAN ISIDRO\n`;
       csv += `Jornada: Peregrinacion a Lujan\n`;
@@ -1082,38 +1170,41 @@
       csv += `Operador: "${appState.operador}"\n`;
       csv += `Fecha y Hora de Emision: ${new Date().toLocaleString()}\n\n`;
 
-      csv += `Cod;Categoria;` + hours.join(';') + `;Total Categoria\n`;
+      csv += `Cod;Categoria;` + colLabels.join(';') + `;Total Categoria\n`;
 
       OFFICIAL_CATEGORIES.forEach(cat => {
         let line = `${cat.id};"${cat.name.replace(/"/g, '""')}";`;
         let totalCat = 0;
-        hours.forEach(h => {
-          const val = appState.dataByHour[h]?.[cat.id]?.count || 0;
+        entries.forEach(e => {
+          const val = appState.dataByDate[e.fecha]?.[e.hora]?.[cat.id]?.count || 0;
           totalCat += val;
           line += `${val};`;
         });
         line += `${totalCat}\n`;
+        csv += line;
       });
 
       // Línea de totales por hora
-      csv += `;;` + hours.map(h => {
+      csv += `;;` + entries.map(e => {
         let sum = 0;
-        Object.values(appState.dataByHour[h] || {}).forEach(c => sum += c.count || 0);
+        Object.values(appState.dataByDate[e.fecha]?.[e.hora] || {}).forEach(c => sum += c.count || 0);
         return sum;
       }).join(';') + `;`;
 
       // Total general
       let grandTotal = 0;
-      Object.values(appState.dataByHour).forEach(hd => Object.values(hd).forEach(c => grandTotal += c.count || 0));
+      Object.values(appState.dataByDate).forEach(dayData => {
+        Object.values(dayData).forEach(hd => Object.values(hd).forEach(c => grandTotal += c.count || 0));
+      });
       csv += `${grandTotal}\n\n`;
 
       // Detalle de Otros
       csv += `DETALLE DE CATEGORIA "OTROS":\n`;
-      csv += `Hora;Detalle\n`;
-      hours.forEach(h => {
-        const item = appState.dataByHour[h]?.[21];
+      csv += `Fecha;Hora;Detalle\n`;
+      entries.forEach(e => {
+        const item = appState.dataByDate[e.fecha]?.[e.hora]?.[21];
         if (item && item.details && item.details.trim() !== '') {
-          csv += `${h};"${item.details.replace(/"/g, '""')}"\n`;
+          csv += `${formatDateDisplay(e.fecha)};${e.hora};"${item.details.replace(/"/g, '""')}"\n`;
         }
       });
 
@@ -1130,27 +1221,30 @@
     // SINCRONIZACIÓN AUTOMÁTICA CON GOOGLE SHEETS
     function buildSyncPayload() {
       const registros = [];
-      Object.keys(appState.dataByHour).forEach(hora => {
-        const hourData = appState.dataByHour[hora];
-        OFFICIAL_CATEGORIES.forEach(cat => {
-          const item = hourData[cat.id];
-          const cantidad = item?.count || 0;
-          if (cantidad >= 1) {
-            registros.push({
-              hora,
-              catId: cat.id,
-              catName: cat.name,
-              cantidad,
-              detalle: item.details || ''
-            });
-          }
+      Object.keys(appState.dataByDate).sort().forEach(fecha => {
+        const dayData = appState.dataByDate[fecha];
+        Object.keys(dayData).sort().forEach(hora => {
+          const hourData = dayData[hora];
+          OFFICIAL_CATEGORIES.forEach(cat => {
+            const item = hourData[cat.id];
+            const cantidad = item?.count || 0;
+            if (cantidad >= 1) {
+              registros.push({
+                fecha: formatDateDisplay(fecha),
+                hora,
+                catId: cat.id,
+                catName: cat.name,
+                cantidad,
+                detalle: item.details || ''
+              });
+            }
+          });
         });
       });
 
       return {
         puesto: appState.puesto,
         operador: appState.operador,
-        fecha: new Date().toLocaleDateString('es-AR'),
         registros
       };
     }
@@ -1180,6 +1274,12 @@
       // Navegación de horas
       document.getElementById('btnPrevHour').addEventListener('click', () => changeHour(-1));
       document.getElementById('btnNextHour').addEventListener('click', () => changeHour(1));
+
+      // Selector de fecha (tocar la fecha chica de arriba)
+      document.getElementById('dateDisplay').addEventListener('click', openDatePicker);
+      document.getElementById('datePickerInput').addEventListener('change', (e) => {
+        goToDate(e.target.value);
+      });
 
       // Menú lateral
       document.getElementById('btnOpenMenu').addEventListener('click', openDrawer);
