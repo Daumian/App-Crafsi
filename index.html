@@ -909,7 +909,10 @@
     // ESTADO DE LA APP
     const STORAGE_KEY = 'cruz_roja_lujan_db_v2';
     const SHEETS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbyeC5_-fJLCgdsIFaIyyAITW2PH7MQFNUK2msFEUNyXf5DU9KIrmmlJnIvWRXv7corY/exec';
-    const SYNC_INTERVAL_MS = 10 * 60 * 1000; // 10 minutos
+    // Sync por "debounce": cada cambio de datos reinicia este contador; recién se sincroniza
+    // cuando pasan SYNC_DEBOUNCE_MS sin ningún cambio nuevo. Así, 10 taps seguidos mandan 1 sync, no 10.
+    const SYNC_DEBOUNCE_MS = 20 * 1000; // 20 segundos de inactividad
+    let syncDebounceTimer = null;
     // Token compartido con el Apps Script: no es una seguridad fuerte (queda visible en el código),
     // pero corta en seco a bots que escanean URLs de Apps Script al voleo.
     const SYNC_SECRET = '73f9b7e5d9136e94e265d271556ffdb7b94c3f67';
@@ -1125,6 +1128,7 @@
       const newCount = Math.max(0, hourData[catId].count + delta);
       hourData[catId].count = newCount;
       saveState();
+      scheduleDebouncedSync();
       updateCategoryUI(catId);
     }
 
@@ -1137,6 +1141,7 @@
 
       hourData[catId].count = cleanVal;
       saveState();
+      scheduleDebouncedSync();
       updateCategoryUI(catId);
     }
 
@@ -1146,6 +1151,7 @@
       if (hourData[catId]) {
         hourData[catId].details = text;
         saveState();
+        scheduleDebouncedSync();
       }
     }
 
@@ -1373,6 +1379,7 @@
       appState.selectedHour = formatHourString(nextDate);
       appState.isEditUnlocked = false;
       renderScreen();
+      syncNow();
     }
 
     function openDatePicker() {
@@ -1395,6 +1402,7 @@
       }
       appState.isEditUnlocked = false;
       renderScreen();
+      syncNow();
     }
 
     // MENÚ LATERAL / DRAWER
@@ -1438,6 +1446,7 @@
           appState.isEditUnlocked = false;
           closeDrawer();
           renderScreen();
+          syncNow();
         };
 
         let tagsHTML = activeCats.length > 0
@@ -1560,6 +1569,24 @@
       }).catch(err => console.warn('Error al sincronizar con Sheets:', err));
     }
 
+    // Se llama tras cada cambio de datos (contador, detalle). Reinicia el contador de 20s:
+    // si no hay más cambios en ese lapso, recién ahí se sincroniza.
+    function scheduleDebouncedSync() {
+      clearTimeout(syncDebounceTimer);
+      syncDebounceTimer = setTimeout(() => {
+        syncDebounceTimer = null;
+        syncToSheets();
+      }, SYNC_DEBOUNCE_MS);
+    }
+
+    // Sync inmediato (cancela cualquier debounce pendiente). Se usa al abrir la app
+    // y al cambiar de hora/fecha, para no dejar datos de la hora anterior esperando.
+    function syncNow() {
+      clearTimeout(syncDebounceTimer);
+      syncDebounceTimer = null;
+      syncToSheets();
+    }
+
     // CONFIGURACIÓN DE EVENT LISTENERS AL CARGAR
     window.addEventListener('DOMContentLoaded', () => {
       initOrLoadState();
@@ -1621,8 +1648,8 @@
       });
 
       startClockSync();
-      setInterval(syncToSheets, SYNC_INTERVAL_MS);
       renderScreen();
+      syncNow(); // por si quedó algo sin mandar de la última vez que se usó la app
     });
   </script>
 </body>
