@@ -889,6 +889,7 @@
         <div>
           <h3>Historial por Hora</h3>
           <span id="drawerMetaInfo" style="font-size:11px; color:#6B7280; font-weight:600;">Jornada Peregrinación</span>
+          <button type="button" id="btnEditPuesto" style="background:none; border:none; padding:0; margin-left:6px; font-size:11px; font-weight:700; color:var(--cr-teal); text-decoration:underline; cursor:pointer;">Cambiar</button>
         </div>
         <button class="icon-btn" id="btnCloseMenu">✕</button>
       </div>
@@ -1078,6 +1079,7 @@
       if (opVal) saveToHistory('operadores', opVal);
 
       saveState();
+      syncNow();
 
       const modal = document.getElementById('startModal');
       if (modal) {
@@ -1384,6 +1386,15 @@
 
     function closeDrawer() {
       document.getElementById('drawerOverlay').classList.remove('active');
+    }
+
+    // Reabre el modal de inicio para corregir Puesto/Operador sin perder nada de lo cargado
+    // (a diferencia de "Reiniciar Guardia", que sí borra todo).
+    function openEditPuestoModal() {
+      closeDrawer();
+      document.getElementById('inputPuesto').value = appState.puesto || '';
+      document.getElementById('inputOperador').value = appState.operador || '';
+      document.getElementById('startModal').style.display = 'flex';
     }
 
     function renderDrawerHistory() {
@@ -1746,6 +1757,7 @@
       // Menú lateral
       document.getElementById('btnOpenMenu').addEventListener('click', openDrawer);
       document.getElementById('btnCloseMenu').addEventListener('click', closeDrawer);
+      document.getElementById('btnEditPuesto').addEventListener('click', openEditPuestoModal);
       document.getElementById('drawerOverlay').addEventListener('click', (e) => {
         if (e.target.id === 'drawerOverlay') closeDrawer();
       });
