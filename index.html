@@ -785,7 +785,7 @@
   <!-- FOOTER FIJO CON TOTALES -->
   <footer class="app-footer">
     <div class="total-box">
-      <div class="total-hour-title" id="totalHourDisplay">Total a la hora: 0</div>
+      <div class="total-hour-title" id="totalHourDisplay">Total del bloque: 0</div>
     </div>
     <div class="total-day-text">
       Total de la jornada: <span id="totalDayDisplay">0</span>
@@ -881,6 +881,17 @@
       return `${h}:00`;
     }
 
+    // Bloques de 2 horas (16:00-18:00, 18:00-20:00, ...). Usado para todo lo nuevo
+    // a partir de ahora; lo ya cargado en bloques de 1 hora queda intacto con su
+    // formato viejo (sigue viéndose y exportándose igual, solo cambia el ancho del
+    // bloque para los registros nuevos).
+    function formatHourBlockString(date) {
+      const h = date.getHours();
+      const blockStart = Math.floor(h / 2) * 2;
+      const blockEnd = blockStart + 2;
+      return `${String(blockStart).padStart(2, '0')}:00-${String(blockEnd).padStart(2, '0')}:00`;
+    }
+
     function formatDateISO(date) {
       const y = date.getFullYear();
       const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -917,7 +928,7 @@
 
       const now = new Date();
       const todayISO = formatDateISO(now);
-      const currentH = formatHourString(now);
+      const currentH = formatHourBlockString(now);
 
       // Migración desde el formato anterior (sin fecha, todo era "hoy")
       if (appState.dataByHour && !appState.dataByDate) {
@@ -1050,7 +1061,7 @@
       setInterval(() => {
         const now = new Date();
         const nowDate = formatDateISO(now);
-        const nowH = formatHourString(now);
+        const nowH = formatHourBlockString(now);
         if (nowDate !== appState.currentRealDate || nowH !== appState.currentRealHour) {
           appState.currentRealDate = nowDate;
           appState.currentRealHour = nowH;
@@ -1135,7 +1146,7 @@
       Object.values(hourData).forEach(item => {
         totalHour += (item.count || 0);
       });
-      document.getElementById('totalHourDisplay').textContent = `Total a la hora: ${totalHour}`;
+      document.getElementById('totalHourDisplay').textContent = `Total del bloque: ${totalHour}`;
 
       // Total de la jornada = total del día seleccionado (no de todas las fechas guardadas)
       const dayData = appState.dataByDate[appState.selectedDate] || {};
@@ -1236,12 +1247,12 @@
     function changeHour(step) {
       const cur = dateHourToTimestamp(appState.selectedDate, appState.selectedHour);
       const real = dateHourToTimestamp(appState.currentRealDate, appState.currentRealHour);
-      let next = cur + step * 60 * 60 * 1000;
+      let next = cur + step * 2 * 60 * 60 * 1000; // bloques de 2hs
       if (next > real) next = real; // no se puede navegar al futuro
 
       const nextDate = new Date(next);
       appState.selectedDate = formatDateISO(nextDate);
-      appState.selectedHour = formatHourString(nextDate);
+      appState.selectedHour = formatHourBlockString(nextDate);
       appState.isEditUnlocked = false;
       renderScreen();
       syncNow();
