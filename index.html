@@ -964,6 +964,18 @@
       { id: 21, name: "Otros (detallar)" }
     ];
 
+    // Respaldo para cuando la Sheet trae la fila con "Categoria ID" vacío (vimos esto en
+    // vivo): buscamos el id por el nombre de la categoría antes de descartar la fila.
+    const CATEGORY_ID_BY_NAME = {};
+    OFFICIAL_CATEGORIES.forEach(c => { CATEGORY_ID_BY_NAME[c.name.trim().toLowerCase()] = c.id; });
+
+    function resolveCatId(idRaw, nameRaw) {
+      const parsed = parseInt(idRaw, 10);
+      if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 21) return parsed;
+      const byName = CATEGORY_ID_BY_NAME[(nameRaw || '').trim().toLowerCase()];
+      return byName || null;
+    }
+
     // ESTADO DE LA APP
     const STORAGE_KEY = 'cruz_roja_lujan_db_v2';
     const SHEETS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbyeC5_-fJLCgdsIFaIyyAITW2PH7MQFNUK2msFEUNyXf5DU9KIrmmlJnIvWRXv7corY/exec';
@@ -1732,13 +1744,13 @@
         const fechaRaw = (r[0] || '').trim();
         const hora = (r[1] || '').trim();
         const puesto = (r[2] || '').trim();
-        const catId = parseInt(r[4], 10);
+        const catId = resolveCatId(r[4], r[5]);
         const cantidad = parseInt(r[6], 10) || 0;
         const detalle = (r[7] || '').trim();
 
         if (puesto !== puestoName) return;
         const fechaISO = parseSheetFechaToISO(fechaRaw);
-        if (!fechaISO || !hora || !Number.isInteger(catId)) { omitidas++; return; }
+        if (!fechaISO || !hora || !catId) { omitidas++; return; }
 
         if (!newDataByDate[fechaISO]) newDataByDate[fechaISO] = {};
         if (!newDataByDate[fechaISO][hora]) newDataByDate[fechaISO][hora] = {};
