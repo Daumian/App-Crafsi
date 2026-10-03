@@ -1710,7 +1710,7 @@
         const csvText = await res.text();
         const rows = parseCSV(csvText).slice(1).filter(r => r.length >= 7 && r[0]);
         lastCombinedRows = rows;
-        renderCombinedStatus(rows);
+        renderCombinedStatus(rows, csvText);
       } catch (err) {
         lastCombinedRows = [];
         body.innerHTML = `<p class="combined-error">No se pudo traer el estado combinado. Revisá la conexión e intentá de nuevo.<br><small>${escapeHtml(String(err && err.message || err))}</small></p>`;
@@ -1777,7 +1777,7 @@
       alert(`Te uniste a "${puestoName}". Se importaron ${totalImported} atenciones.\n\nSi hace falta, actualizá el Operador desde el botón "Cambiar" del menú.`);
     }
 
-    function renderCombinedStatus(rows) {
+    function renderCombinedStatus(rows, rawText) {
       const body = document.getElementById('combinedModalBody');
 
       // Agrupa tal cual viene en la Sheet (por fecha+hora+puesto), sin intentar
@@ -1801,7 +1801,10 @@
       });
 
       if (order.length === 0) {
-        body.innerHTML = '<p class="combined-empty">Todavía no hay datos cargados en la Sheet.</p>';
+        const preview = (rawText || '').slice(0, 300);
+        body.innerHTML = `<p class="combined-empty">Todavía no hay datos cargados en la Sheet (o no se pudo leer bien la respuesta).</p>
+          <p style="font-size:11px; color:#9E9E9E; margin-top:8px;">Lo que llegó del servidor (primeros 300 caracteres, para diagnosticar):</p>
+          <pre style="font-size:10px; color:#6B7280; white-space:pre-wrap; word-break:break-all; background:#F4F5F7; padding:8px; border-radius:6px; margin-top:4px; max-height:200px; overflow-y:auto;">${escapeHtml(preview)}</pre>`;
         return;
       }
 
