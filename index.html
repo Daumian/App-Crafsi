@@ -564,6 +564,73 @@
       margin-bottom: 16px;
       line-height: 1.4;
     }
+
+    /* MODAL: ESTADO COMBINADO */
+    .combined-modal-box {
+      max-width: 400px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .combined-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+    .combined-modal-body {
+      flex: 1;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      text-align: left;
+    }
+    .combined-loading, .combined-empty {
+      font-size: 13px;
+      color: var(--cr-gray-dark);
+      text-align: center;
+      padding: 20px 0;
+    }
+    .combined-error {
+      font-size: 13px;
+      color: var(--cr-red-dark);
+      text-align: center;
+      padding: 20px 0;
+    }
+    .combined-block-group {
+      background: var(--cr-gray-light);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      margin-bottom: 10px;
+    }
+    .combined-block-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--cr-black);
+      margin-bottom: 6px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--cr-gray-border);
+    }
+    .combined-block-total {
+      color: var(--cr-teal);
+    }
+    .combined-puesto-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      padding: 3px 0;
+    }
+    .combined-puesto-name {
+      font-weight: 600;
+      color: #374151;
+    }
+    .combined-puesto-total {
+      font-weight: 800;
+      color: var(--cr-black);
+    }
+
     .form-group {
       margin-bottom: 12px;
       text-align: left;
@@ -724,6 +791,19 @@
     </div>
   </div>
 
+  <!-- MODAL: ESTADO COMBINADO DE TODOS LOS PUESTOS (lee directo de la Sheet, de solo lectura) -->
+  <div class="modal-overlay" id="combinedModal" style="display:none;">
+    <div class="modal-box combined-modal-box">
+      <div class="combined-modal-header">
+        <h2 style="margin-bottom:0;">Estado combinado</h2>
+        <button class="icon-btn" id="btnCloseCombined">✕</button>
+      </div>
+      <p style="margin-bottom:10px;">Datos tal cual están en la Google Sheet ahora mismo, agrupados por fecha/hora y puesto.</p>
+      <div class="combined-modal-body" id="combinedModalBody"></div>
+      <button type="button" class="btn-primary" id="btnRefreshCombined" style="margin-top:12px;">↻ Actualizar</button>
+    </div>
+  </div>
+
   <!-- ENCABEZADO PRINCIPAL -->
   <header class="app-header">
     <div class="top-bar">
@@ -748,11 +828,21 @@
         </div>
       </div>
 
-      <button class="icon-btn" id="btnFilterToggle" title="Solo con atenciones">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
-        </svg>
-      </button>
+      <div style="display:flex; align-items:center;">
+        <button class="icon-btn" id="btnCombinedStatus" title="Ver estado combinado de todos los puestos">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 2v6h-6"/>
+            <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+            <path d="M3 22v-6h6"/>
+            <path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="btnFilterToggle" title="Solo con atenciones">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+          </svg>
+        </button>
+      </div>
     </div>
 
     <!-- FECHA (chica, tocable para elegir otra) -->
@@ -863,6 +953,9 @@
     // Token compartido con el Apps Script: no es una seguridad fuerte (queda visible en el código),
     // pero corta en seco a bots que escanean URLs de Apps Script al voleo.
     const SYNC_SECRET = '73f9b7e5d9136e94e265d271556ffdb7b94c3f67';
+    // Lectura pública de la Sheet (función nativa de Google Sheets, no pasa por el Apps Script).
+    // Requiere que la Sheet esté compartida como "Cualquier persona con el enlace".
+    const SHEETS_CSV_URL = 'https://docs.google.com/spreadsheets/d/1vpmWEKTvSfP6c7IWAwT6wsWKK_WxWkopn0t2Nwvybzg/gviz/tq?tqx=out:csv&sheet=Registros';
     let appState = {
       puesto: '',
       operador: '',
@@ -1514,6 +1607,114 @@
       syncToSheets();
     }
 
+    // ESTADO COMBINADO: lee la Sheet publicada (solo lectura, no toca appState ni el Apps Script)
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function parseCSV(text) {
+      const rows = [];
+      let row = [];
+      let field = '';
+      let inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (inQuotes) {
+          if (c === '"') {
+            if (text[i + 1] === '"') { field += '"'; i++; }
+            else { inQuotes = false; }
+          } else {
+            field += c;
+          }
+        } else if (c === '"') {
+          inQuotes = true;
+        } else if (c === ',') {
+          row.push(field); field = '';
+        } else if (c === '\n') {
+          row.push(field); rows.push(row); row = []; field = '';
+        } else if (c === '\r') {
+          // ignorar
+        } else {
+          field += c;
+        }
+      }
+      if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+      return rows;
+    }
+
+    function openCombinedModal() {
+      document.getElementById('combinedModal').style.display = 'flex';
+    }
+
+    function closeCombinedModal() {
+      document.getElementById('combinedModal').style.display = 'none';
+    }
+
+    async function fetchCombinedStatus() {
+      openCombinedModal();
+      const body = document.getElementById('combinedModalBody');
+      body.innerHTML = '<p class="combined-loading">Cargando datos de la Sheet…</p>';
+
+      try {
+        const res = await fetch(SHEETS_CSV_URL, { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const csvText = await res.text();
+        const rows = parseCSV(csvText).slice(1).filter(r => r.length >= 7 && r[0]);
+        renderCombinedStatus(rows);
+      } catch (err) {
+        body.innerHTML = `<p class="combined-error">No se pudo traer el estado combinado. Revisá la conexión e intentá de nuevo.<br><small>${escapeHtml(String(err && err.message || err))}</small></p>`;
+      }
+    }
+
+    function renderCombinedStatus(rows) {
+      const body = document.getElementById('combinedModalBody');
+
+      // Agrupa tal cual viene en la Sheet (por fecha+hora+puesto), sin intentar
+      // re-formatear fechas/horas: así no se rompe si Sheets las reformateó solo.
+      const groups = {};
+      const order = [];
+
+      rows.forEach(r => {
+        const fecha = (r[0] || '').trim();
+        const hora = (r[1] || '').trim();
+        const puesto = (r[2] || '(sin puesto)').trim();
+        const catName = (r[5] || '').trim();
+        const cantidad = parseInt(r[6], 10) || 0;
+        if (!fecha || !hora || cantidad <= 0) return;
+
+        const key = `${fecha} · ${hora}`;
+        if (!groups[key]) { groups[key] = { puestos: {}, total: 0 }; order.push(key); }
+        if (!groups[key].puestos[puesto]) groups[key].puestos[puesto] = { total: 0 };
+        groups[key].puestos[puesto].total += cantidad;
+        groups[key].total += cantidad;
+      });
+
+      if (order.length === 0) {
+        body.innerHTML = '<p class="combined-empty">Todavía no hay datos cargados en la Sheet.</p>';
+        return;
+      }
+
+      // Lo más reciente (último agregado) primero
+      let html = '';
+      order.slice().reverse().forEach(key => {
+        const g = groups[key];
+        html += `<div class="combined-block-group">
+          <div class="combined-block-header"><span>${escapeHtml(key)}</span><span class="combined-block-total">${g.total}</span></div>`;
+        Object.keys(g.puestos).sort().forEach(p => {
+          html += `<div class="combined-puesto-row">
+            <span class="combined-puesto-name">${escapeHtml(p)}</span>
+            <span class="combined-puesto-total">${g.puestos[p].total}</span>
+          </div>`;
+        });
+        html += `</div>`;
+      });
+      body.innerHTML = html;
+    }
+
     // CONFIGURACIÓN DE EVENT LISTENERS AL CARGAR
     window.addEventListener('DOMContentLoaded', () => {
       initOrLoadState();
@@ -1560,6 +1761,14 @@
         appState.filterActiveOnly = !appState.filterActiveOnly;
         document.getElementById('btnFilterToggle').style.color = appState.filterActiveOnly ? '#ED1B2D' : '#1A1A1A';
         renderScreen();
+      });
+
+      // Estado combinado (lee la Sheet, de solo lectura)
+      document.getElementById('btnCombinedStatus').addEventListener('click', fetchCombinedStatus);
+      document.getElementById('btnRefreshCombined').addEventListener('click', fetchCombinedStatus);
+      document.getElementById('btnCloseCombined').addEventListener('click', closeCombinedModal);
+      document.getElementById('combinedModal').addEventListener('click', (e) => {
+        if (e.target.id === 'combinedModal') closeCombinedModal();
       });
 
       // Exportaciones
