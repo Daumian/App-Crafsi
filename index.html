@@ -481,6 +481,29 @@
       background: #FAFAFA;
     }
 
+    .sync-status {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--cr-gray-dark);
+      padding: 2px 2px 6px 2px;
+    }
+    .sync-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ADB5BD;
+      flex-shrink: 0;
+    }
+    .sync-status-dot.ok {
+      background: #2E7D32;
+    }
+    .sync-status-dot.warn {
+      background: #E65100;
+    }
+
     .btn-action {
       display: flex;
       align-items: center;
@@ -785,6 +808,10 @@
       </div>
 
       <div class="drawer-footer">
+        <div class="sync-status" id="syncStatusLine">
+          <span class="sync-status-dot" id="syncStatusDot"></span>
+          <span id="syncStatusText">Sin cargar datos todavía</span>
+        </div>
         <button type="button" class="btn-action btn-excel" id="btnExportExcel">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
           Exportar a Excel (.CSV)
@@ -1031,6 +1058,7 @@
           saveState();
           renderScreen();
         }
+        updateSyncStatusUI(); // refresca el "hace X min" aunque no haya habido un sync nuevo
       }, 15000);
     }
 
@@ -1246,6 +1274,7 @@
     function openDrawer() {
       renderDrawerHistory();
       document.getElementById('drawerMetaInfo').textContent = `${appState.puesto || 'Puesto'} • ${appState.operador || 'Operador'}`;
+      updateSyncStatusUI();
       document.getElementById('drawerOverlay').classList.add('active');
     }
 
@@ -1394,16 +1423,66 @@
       };
     }
 
+    // Estado del sync, solo para mostrar en pantalla (no se persiste, no hace falta sobrevivir a un reload)
+    let syncStatus = { lastAttemptAt: null, lastOkAt: null, consecutiveFailures: 0 };
+
     function syncToSheets() {
       const payload = buildSyncPayload();
       if (payload.registros.length === 0) return;
+
+      syncStatus.lastAttemptAt = Date.now();
 
       fetch(SHEETS_WEBAPP_URL, {
         method: 'POST',
         mode: 'no-cors',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(payload)
-      }).catch(err => console.warn('Error al sincronizar con Sheets:', err));
+      }).then(() => {
+        // mode:'no-cors' no deja leer si Sheets lo aceptó, pero esto confirma que la red anduvo
+        syncStatus.lastOkAt = Date.now();
+        syncStatus.consecutiveFailures = 0;
+        updateSyncStatusUI();
+      }).catch(err => {
+        console.warn('Error al sincronizar con Sheets:', err);
+        syncStatus.consecutiveFailures++;
+        updateSyncStatusUI();
+      });
+    }
+
+    function formatRelativeTime(ms) {
+      const diffMin = Math.floor((Date.now() - ms) / 60000);
+      if (diffMin < 1) return 'recién';
+      if (diffMin === 1) return 'hace 1 min';
+      if (diffMin < 60) return `hace ${diffMin} min`;
+      const diffH = Math.floor(diffMin / 60);
+      return `hace ${diffH}h`;
+    }
+
+    function updateSyncStatusUI() {
+      const dot = document.getElementById('syncStatusDot');
+      const text = document.getElementById('syncStatusText');
+      if (!dot || !text) return;
+
+      if (!syncStatus.lastAttemptAt) {
+        dot.className = 'sync-status-dot';
+        text.textContent = 'Sin cargar datos todavía';
+        return;
+      }
+
+      if (syncStatus.consecutiveFailures >= 3) {
+        dot.className = 'sync-status-dot warn';
+        text.textContent = `Sin conexión (${syncStatus.consecutiveFailures} intentos fallidos) — los datos están a salvo en el celular`;
+        return;
+      }
+
+      if (syncStatus.lastOkAt) {
+        dot.className = 'sync-status-dot ok';
+        text.textContent = `Sincronizado ${formatRelativeTime(syncStatus.lastOkAt)}`;
+        return;
+      }
+
+      dot.className = 'sync-status-dot';
+      text.textContent = 'Sincronizando…';
     }
 
     // Se llama tras cada cambio de datos (contador, detalle). Reinicia el contador de 20s:
