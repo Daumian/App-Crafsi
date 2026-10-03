@@ -618,17 +618,37 @@
     }
     .combined-puesto-row {
       display: flex;
-      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
       font-size: 13px;
-      padding: 3px 0;
+      padding: 4px 0;
     }
     .combined-puesto-name {
       font-weight: 600;
       color: #374151;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .combined-puesto-total {
       font-weight: 800;
       color: var(--cr-black);
+    }
+    .btn-join-puesto {
+      background: var(--cr-teal-bg);
+      border: 1px solid #CFE6E8;
+      color: var(--cr-teal);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 5px 9px;
+      border-radius: 10px;
+      cursor: pointer;
+      flex-shrink: 0;
+      font-family: inherit;
+    }
+    .btn-join-puesto:active {
+      background: #CFE6E8;
     }
 
     .form-group {
@@ -1665,6 +1685,8 @@
       document.getElementById('combinedModal').style.display = 'none';
     }
 
+    let lastCombinedRows = []; // filas crudas del último fetch, para poder "unirse" a un puesto sin refetchear
+
     async function fetchCombinedStatus() {
       openCombinedModal();
       const body = document.getElementById('combinedModalBody');
@@ -1675,10 +1697,72 @@
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const csvText = await res.text();
         const rows = parseCSV(csvText).slice(1).filter(r => r.length >= 7 && r[0]);
+        lastCombinedRows = rows;
         renderCombinedStatus(rows);
       } catch (err) {
+        lastCombinedRows = [];
         body.innerHTML = `<p class="combined-error">No se pudo traer el estado combinado. Revisá la conexión e intentá de nuevo.<br><small>${escapeHtml(String(err && err.message || err))}</small></p>`;
       }
+    }
+
+    // La fecha interna de la app siempre es ISO (YYYY-MM-DD); la Sheet la devuelve como
+    // texto "DD/MM/YYYY" (o ya en ISO si Google la reformateó). Si no reconocemos el
+    // formato, preferimos descartar esa fila antes que guardarla en la fecha equivocada.
+    function parseSheetFechaToISO(fechaRaw) {
+      const s = (fechaRaw || '').trim();
+      let m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s);
+      if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+      m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+      if (m) return s;
+      return null;
+    }
+
+    // Trae TODO lo cargado por un puesto (cualquier fecha/hora) y lo pone como los datos
+    // propios de este celular, para poder seguir sumando desde donde quedó ese puesto.
+    // Reemplaza lo que este celular tenía cargado — por eso pide confirmación antes.
+    function joinPuesto(puestoName) {
+      const ok = confirm(`¿Unirte al puesto "${puestoName}"?\n\nEsto va a REEMPLAZAR los datos que tenés cargados en este celular por los de ese puesto (traídos de la Sheet). No se puede deshacer.`);
+      if (!ok) return;
+
+      const newDataByDate = {};
+      let totalImported = 0;
+      let omitidas = 0;
+
+      lastCombinedRows.forEach(r => {
+        const fechaRaw = (r[0] || '').trim();
+        const hora = (r[1] || '').trim();
+        const puesto = (r[2] || '').trim();
+        const catId = parseInt(r[4], 10);
+        const cantidad = parseInt(r[6], 10) || 0;
+        const detalle = (r[7] || '').trim();
+
+        if (puesto !== puestoName) return;
+        const fechaISO = parseSheetFechaToISO(fechaRaw);
+        if (!fechaISO || !hora || !Number.isInteger(catId)) { omitidas++; return; }
+
+        if (!newDataByDate[fechaISO]) newDataByDate[fechaISO] = {};
+        if (!newDataByDate[fechaISO][hora]) newDataByDate[fechaISO][hora] = {};
+        newDataByDate[fechaISO][hora][catId] = { count: cantidad, details: detalle };
+        totalImported += cantidad;
+      });
+
+      if (omitidas > 0) {
+        console.warn(`joinPuesto: se omitieron ${omitidas} filas con fecha/hora/categoría en formato inesperado.`);
+      }
+
+      appState.dataByDate = newDataByDate;
+      appState.puesto = puestoName;
+      appState.selectedDate = appState.currentRealDate;
+      appState.selectedHour = appState.currentRealHour;
+      appState.isEditUnlocked = false;
+      ensureHourData(appState.currentRealDate, appState.currentRealHour);
+
+      saveState();
+      closeCombinedModal();
+      renderScreen();
+      syncNow();
+
+      alert(`Te uniste a "${puestoName}". Se importaron ${totalImported} atenciones.\n\nSi hace falta, actualizá el Operador desde el botón "Cambiar" del menú.`);
     }
 
     function renderCombinedStatus(rows) {
@@ -1719,6 +1803,7 @@
           html += `<div class="combined-puesto-row">
             <span class="combined-puesto-name">${escapeHtml(p)}</span>
             <span class="combined-puesto-total">${g.puestos[p].total}</span>
+            <button type="button" class="btn-join-puesto" data-puesto="${escapeHtml(p)}">Unirme</button>
           </div>`;
         });
         html += `</div>`;
@@ -1781,6 +1866,10 @@
       document.getElementById('btnCloseCombined').addEventListener('click', closeCombinedModal);
       document.getElementById('combinedModal').addEventListener('click', (e) => {
         if (e.target.id === 'combinedModal') closeCombinedModal();
+      });
+      document.getElementById('combinedModalBody').addEventListener('click', (e) => {
+        const btn = e.target.closest('.btn-join-puesto');
+        if (btn) joinPuesto(btn.getAttribute('data-puesto'));
       });
 
       // Exportaciones
