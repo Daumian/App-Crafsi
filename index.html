@@ -426,8 +426,8 @@
       background: #F8F9FA;
       border-radius: var(--radius-sm);
       border: 1px solid var(--cr-gray-border);
-      padding: 10px 12px;
-      margin-bottom: 10px;
+      padding: 7px 10px;
+      margin-bottom: 6px;
       cursor: pointer;
       transition: border-color 0.2s, background-color 0.2s;
     }
@@ -445,12 +445,13 @@
       margin-bottom: 6px;
     }
     .history-time {
-      font-size: 16px;
+      font-size: 13px;
       font-weight: 800;
       color: var(--cr-black);
     }
     .history-count {
-      font-size: 13px;
+      font-size: 11.5px;
+      white-space: nowrap;
       font-weight: 700;
       color: var(--cr-teal);
       background: #FFFFFF;
@@ -473,11 +474,11 @@
     }
 
     .drawer-footer {
-      padding: 14px;
+      padding: 10px 12px;
       border-top: 1px solid var(--cr-gray-border);
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 6px;
       background: #FAFAFA;
     }
 
@@ -508,15 +509,25 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
+      gap: 6px;
       width: 100%;
-      padding: 12px;
+      padding: 8px 10px;
       border-radius: var(--radius-sm);
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 700;
       border: none;
       cursor: pointer;
       transition: all 0.15s;
+    }
+    .btn-action svg {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+    }
+    .drawer-btn-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
     }
     .btn-excel {
       background: #2E7D32;
@@ -943,25 +954,29 @@
           <span class="sync-status-dot" id="syncStatusDot"></span>
           <span id="syncStatusText">Sin cargar datos todavía</span>
         </div>
-        <button type="button" class="btn-action btn-force-sync" id="btnForceSync">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
-          Forzar envío al Excel
-        </button>
-        <button type="button" class="btn-action btn-force-download" id="btnForceDownload">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12l7 7 7-7"/></svg>
-          Forzar descarga del Excel
-        </button>
+        <div class="drawer-btn-row">
+          <button type="button" class="btn-action btn-force-sync" id="btnForceSync">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
+            Forzar envío
+          </button>
+          <button type="button" class="btn-action btn-force-download" id="btnForceDownload">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12l7 7 7-7"/></svg>
+            Forzar descarga
+          </button>
+        </div>
         <button type="button" class="btn-action btn-seed635" id="btnSeed635">
           Cargar planilla 63 como "635" (una vez)
         </button>
-        <button type="button" class="btn-action btn-excel" id="btnExportExcel">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
-          Exportar a Excel (.CSV)
-        </button>
-        <button type="button" class="btn-action btn-pdf" id="btnExportPDF">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-          Imprimir / Guardar PDF
-        </button>
+        <div class="drawer-btn-row">
+          <button type="button" class="btn-action btn-excel" id="btnExportExcel">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
+            Exportar CSV
+          </button>
+          <button type="button" class="btn-action btn-pdf" id="btnExportPDF">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            PDF
+          </button>
+        </div>
         <button type="button" class="btn-action btn-reset" id="btnResetDay">
           Reiniciar Guardia
         </button>
@@ -1061,6 +1076,36 @@
       return null;
     }
 
+    // FRANJAS COMO EN LA PLANILLA DE PAPEL
+    // Día 1: 07-12 (la larga), después de a 2hs (12-14 ... 22-00). Día 2: 00-02 ... 06-08
+    // y "Cierre" de 08 en adelante. Cada franja se guarda con su hora de inicio ("07:00",
+    // "12:00", ...) porque es el único formato que la Sheet deja leer de vuelta.
+    const EVENT_START_DATE = '2026-10-03';
+
+    function blockStartHour(dateISO, h) {
+      if (dateISO <= EVENT_START_DATE) return h < 12 ? 7 : h - (h % 2);
+      return h < 8 ? h - (h % 2) : 8;
+    }
+
+    function blockEndHour(dateISO, start) {
+      if (dateISO <= EVENT_START_DATE && start === 7) return 12;
+      if (dateISO > EVENT_START_DATE && start === 8) return 24;
+      return start + 2;
+    }
+
+    function blockKeyFor(dateISO, h) {
+      return `${String(blockStartHour(dateISO, h)).padStart(2, '0')}:00`;
+    }
+
+    // "12:00" -> "12–14", "07:00" (día 1) -> "07–12", "08:00" (día 2) -> "Cierre"
+    function blockLabel(dateISO, hourKey) {
+      const start = parseInt(hourKey, 10);
+      if (isNaN(start)) return hourKey;
+      if (dateISO > EVENT_START_DATE && start === 8) return 'Cierre';
+      const end = blockEndHour(dateISO, start) % 24;
+      return `${String(start).padStart(2, '0')}–${String(end).padStart(2, '0')}`;
+    }
+
     function editKey(fecha, hora, catId) {
       return `${fecha}|${hora}|${catId}`;
     }
@@ -1106,7 +1151,7 @@
 
       const now = new Date();
       const todayISO = formatDateISO(now);
-      const currentH = formatHourString(now);
+      const currentH = blockKeyFor(todayISO, now.getHours());
 
       // Migración desde el formato anterior (sin fecha, todo era "hoy")
       if (appState.dataByHour && !appState.dataByDate) {
@@ -1128,7 +1173,8 @@
         appState.selectedDate = todayISO;
         appState.selectedHour = currentH;
       }
-      appState.selectedHour = normalizeHora(appState.selectedHour) || currentH;
+      const selNorm = normalizeHora(appState.selectedHour);
+      appState.selectedHour = selNorm ? blockKeyFor(appState.selectedDate, parseInt(selNorm, 10)) : currentH;
 
       // Si ya hay puesto guardado, ocultar modal
       if (appState.puesto || appState.operador) {
@@ -1140,26 +1186,41 @@
     // Versiones anteriores guardaban horas como "8:00" (leídas de la Sheet) o como bloques
     // "20:00-22:00". Todo pasa a "HH:00". Lo que estaba en bloques nunca se pudo leer desde
     // la Sheet, así que queda marcado para reenviarse en el formato que sí se lee.
+    // Pasa lo cargado con horas sueltas ("8:00", "13:00", "20:00-22:00") a su franja.
+    // Primero unifica la misma hora escrita distinto ("8:00" y "08:00": no se suman),
+    // después suma las horas distintas que caen en la misma franja.
     function migrateHourKeys() {
       if (!appState.localEdits) appState.localEdits = {};
+      const edits = appState.localEdits;
+
+      const moveInto = (fecha, day, fromKey, toKey, sum, forcePending) => {
+        if (fromKey === toKey) return;
+        const src = day[fromKey];
+        const dst = day[toKey] || (day[toKey] = {});
+        Object.keys(src).forEach(catId => {
+          const s = src[catId] || {};
+          const d = dst[catId] || { count: 0, details: '' };
+          const sCount = s.count || 0;
+          d.count = sum ? (d.count || 0) + sCount : Math.max(d.count || 0, sCount);
+          if (s.details && !d.details) d.details = s.details;
+          dst[catId] = d;
+          const oldK = editKey(fecha, fromKey, catId);
+          if (edits[oldK] || (forcePending && sCount > 0)) markLocalEdit(fecha, toKey, catId);
+          delete edits[oldK];
+        });
+        delete day[fromKey];
+      };
+
       Object.keys(appState.dataByDate).forEach(fecha => {
         const day = appState.dataByDate[fecha];
         Object.keys(day).forEach(hora => {
-          const target = normalizeHora(hora);
-          if (!target || target === hora) return;
-          const isBlock = hora.includes('-');
-          const src = day[hora];
-          const dst = day[target] || (day[target] = {});
-          Object.keys(src).forEach(catId => {
-            const s = src[catId] || {};
-            const d = dst[catId] || { count: 0, details: '' };
-            const sCount = s.count || 0;
-            d.count = isBlock ? (d.count || 0) + sCount : Math.max(d.count || 0, sCount);
-            if (s.details && !d.details) d.details = s.details;
-            dst[catId] = d;
-            if (isBlock && sCount > 0) markLocalEdit(fecha, target, catId);
-          });
-          delete day[hora];
+          const norm = normalizeHora(hora);
+          // Los bloques "HH:00-HH:00" nunca se pudieron leer de la Sheet: se reenvían
+          if (norm) moveInto(fecha, day, hora, norm, false, hora.includes('-'));
+        });
+        Object.keys(day).forEach(hora => {
+          const h = parseInt(hora, 10);
+          if (!isNaN(h)) moveInto(fecha, day, hora, blockKeyFor(fecha, h), true, false);
         });
       });
     }
@@ -1304,7 +1365,7 @@
       setInterval(() => {
         const now = new Date();
         const nowDate = formatDateISO(now);
-        const nowH = formatHourString(now);
+        const nowH = blockKeyFor(nowDate, now.getHours());
         if (nowDate !== appState.currentRealDate || nowH !== appState.currentRealHour) {
           appState.currentRealDate = nowDate;
           appState.currentRealHour = nowH;
@@ -1414,7 +1475,7 @@
 
       // Fecha, reloj y badges
       document.getElementById('dateDisplay').textContent = formatDateDisplay(selDate);
-      document.getElementById('timeDisplay').textContent = selHour;
+      document.getElementById('timeDisplay').textContent = blockLabel(selDate, selHour);
       const badgeStatus = document.getElementById('badgeStatus');
       const badgeText = document.getElementById('badgeText');
       const lockBanner = document.getElementById('lockBanner');
@@ -1491,14 +1552,18 @@
     }
 
     function changeHour(step) {
+      // Salta de franja en franja: hacia atrás, a la que contiene la hora anterior al inicio
+      // de la actual; hacia adelante, a la que empieza cuando termina la actual.
+      const start = parseInt(appState.selectedHour, 10);
       const cur = dateHourToTimestamp(appState.selectedDate, appState.selectedHour);
       const real = dateHourToTimestamp(appState.currentRealDate, appState.currentRealHour);
-      let next = cur + step * 60 * 60 * 1000;
+      const HOUR = 60 * 60 * 1000;
+      let next = step < 0 ? cur - HOUR : cur + (blockEndHour(appState.selectedDate, start) - start) * HOUR;
       if (next > real) next = real; // no se puede navegar al futuro
 
       const nextDate = new Date(next);
       appState.selectedDate = formatDateISO(nextDate);
-      appState.selectedHour = formatHourString(nextDate);
+      appState.selectedHour = blockKeyFor(appState.selectedDate, nextDate.getHours());
       appState.isEditUnlocked = false;
       renderScreen();
       syncNow();
@@ -1518,6 +1583,8 @@
     function goToDate(newDate) {
       if (!newDate || newDate > appState.currentRealDate) return;
       appState.selectedDate = newDate;
+      // Las franjas cambian según el día: reubicamos la hora elegida en la franja de esa fecha
+      appState.selectedHour = blockKeyFor(newDate, parseInt(appState.selectedHour, 10) || 0);
       // Si nos movemos a hoy y la hora seleccionada todavía no pasó, la ajustamos
       if (appState.selectedDate === appState.currentRealDate && appState.selectedHour > appState.currentRealHour) {
         appState.selectedHour = appState.currentRealHour;
@@ -1563,7 +1630,7 @@
           if (c > 0) {
             totalH += c;
             const ref = OFFICIAL_CATEGORIES.find(x => x.id === parseInt(cid));
-            if (ref) activeCats.push(`${ref.name.substring(0, 16)} (${c})`);
+            if (ref) activeCats.push(`${ref.id}. ${ref.name.split(' (')[0]} (${c})`);
           }
         });
 
@@ -1587,7 +1654,7 @@
 
         card.innerHTML = `
           <div class="history-card-header">
-            <span class="history-time">${formatDateDisplay(fecha)} ${escapeHtml(hora)} ${isNow ? '• (Ahora)' : ''}</span>
+            <span class="history-time">${formatDateDisplay(fecha)} · ${escapeHtml(blockLabel(fecha, hora))}${isNow ? ' · Ahora' : ''}</span>
             <span class="history-count">${totalH} pac.</span>
           </div>
           <div class="history-categories-tags">
@@ -1601,7 +1668,7 @@
     // EXPORTACIÓN A EXCEL / CSV
     function exportToCSV() {
       const entries = getAllDateHourEntries();
-      const colLabels = entries.map(e => `${formatDateDisplay(e.fecha)} ${e.hora}`);
+      const colLabels = entries.map(e => `${formatDateDisplay(e.fecha)} ${blockLabel(e.fecha, e.hora)}`);
       let csv = '\uFEFF'; // BOM para compatibilidad con tildes en Excel
       csv += `CRUZ ROJA ARGENTINA - FILIAL SAN ISIDRO\n`;
       csv += `Jornada: Peregrinacion a Lujan\n`;
@@ -1643,7 +1710,7 @@
       entries.forEach(e => {
         const item = appState.dataByDate[e.fecha]?.[e.hora]?.[21];
         if (item && item.details && item.details.trim() !== '') {
-          csv += `${formatDateDisplay(e.fecha)};${e.hora};"${item.details.replace(/"/g, '""')}"\n`;
+          csv += `${formatDateDisplay(e.fecha)};${blockLabel(e.fecha, e.hora)};"${item.details.replace(/"/g, '""')}"\n`;
         }
       });
 
@@ -1676,14 +1743,15 @@
             const cantidad = item?.count || 0;
             const pending = edits[key] && !edits[key].sentAt;
             if (!pending && !(sendAll && cantidad >= 1)) return;
-            registros.push({
-              fecha: formatDateDisplay(fecha),
-              hora,
-              catId: cat.id,
-              catName: cat.name,
-              cantidad,
-              detalle: item?.details || ''
-            });
+            const base = { fecha: formatDateDisplay(fecha), catId: cat.id, catName: cat.name };
+            registros.push({ ...base, hora, cantidad, detalle: item?.details || '' });
+            // La franja guarda el total de todas sus horas. Si en la Sheet quedaron filas
+            // de horas sueltas de esa franja (versiones viejas), las ponemos en 0 para que
+            // no se sumen dos veces.
+            const start = parseInt(hora, 10);
+            for (let h = start + 1; h < blockEndHour(fecha, start); h++) {
+              registros.push({ ...base, hora: `${String(h).padStart(2, '0')}:00`, cantidad: 0, detalle: '' });
+            }
             sentKeys.push(key);
           });
         });
@@ -1706,12 +1774,20 @@
       const startedAt = Date.now();
       syncStatus.lastAttemptAt = startedAt;
 
-      return fetch(SHEETS_WEBAPP_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload)
-      }).then(() => {
+      // El Apps Script acepta hasta 500 registros por envío: partimos en tandas
+      const CHUNK = 400;
+      const sendChunks = async () => {
+        for (let i = 0; i < payload.registros.length; i += CHUNK) {
+          await fetch(SHEETS_WEBAPP_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ ...payload, registros: payload.registros.slice(i, i + CHUNK) })
+          });
+        }
+      };
+
+      return sendChunks().then(() => {
         // mode:'no-cors' no deja leer si Sheets lo aceptó, pero esto confirma que la red anduvo
         const edits = appState.localEdits || {};
         const now = Date.now();
@@ -1723,7 +1799,7 @@
         syncStatus.lastOkAt = now;
         syncStatus.consecutiveFailures = 0;
         updateSyncStatusUI();
-        return payload.registros.length;
+        return sentKeys.length;
       }).catch(err => {
         console.warn('Error al sincronizar con Sheets:', err);
         syncStatus.consecutiveFailures++;
@@ -1851,9 +1927,16 @@
       records.forEach(rec => {
         if (!samePuesto(rec.puesto, puesto)) return;
         found++;
+        // Horas sueltas (de la app vieja) se suman dentro de su franja
+        const hora = blockKeyFor(rec.fechaISO, parseInt(rec.hora, 10));
         if (!dataByDate[rec.fechaISO]) dataByDate[rec.fechaISO] = {};
-        if (!dataByDate[rec.fechaISO][rec.hora]) dataByDate[rec.fechaISO][rec.hora] = {};
-        dataByDate[rec.fechaISO][rec.hora][rec.catId] = { count: rec.cantidad, details: rec.detalle };
+        if (!dataByDate[rec.fechaISO][hora]) dataByDate[rec.fechaISO][hora] = {};
+        const slot = dataByDate[rec.fechaISO][hora];
+        const prev = slot[rec.catId];
+        slot[rec.catId] = {
+          count: (prev ? prev.count : 0) + rec.cantidad,
+          details: [prev && prev.details, rec.detalle].filter(Boolean).join(' | ')
+        };
         total += rec.cantidad;
       });
       return { dataByDate, total, found };
@@ -2118,13 +2201,14 @@
 
       records
         .filter(rec => rec.cantidad > 0)
-        .sort((a, b) => (a.fechaISO + a.hora).localeCompare(b.fechaISO + b.hora))
+        .map(rec => ({ ...rec, block: blockKeyFor(rec.fechaISO, parseInt(rec.hora, 10)) }))
+        .sort((a, b) => (a.fechaISO + a.block).localeCompare(b.fechaISO + b.block))
         .forEach(rec => {
           const puesto = rec.puesto;
           if (!puestoTotals[puesto]) { puestoTotals[puesto] = 0; puestoOrder.push(puesto); }
           puestoTotals[puesto] += rec.cantidad;
 
-          const key = `${formatDateDisplay(rec.fechaISO)} · ${rec.hora}`;
+          const key = `${formatDateDisplay(rec.fechaISO)} · ${blockLabel(rec.fechaISO, rec.block)}`;
           if (!groups[key]) { groups[key] = { puestos: {}, total: 0 }; order.push(key); }
           if (!groups[key].puestos[puesto]) groups[key].puestos[puesto] = { total: 0 };
           groups[key].puestos[puesto].total += rec.cantidad;
