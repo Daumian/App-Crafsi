@@ -531,6 +531,18 @@
       color: #DC2626;
       border: 1px solid #FECACA;
     }
+    .btn-force-sync {
+      background: var(--cr-teal);
+      color: #FFFFFF;
+    }
+    .btn-force-download {
+      background: #1D4ED8;
+      color: #FFFFFF;
+    }
+    .btn-seed635 {
+      background: #B45309;
+      color: #FFFFFF;
+    }
 
     /* MODAL DE INICIO / CONFIGURACION */
     .modal-overlay {
@@ -931,6 +943,17 @@
           <span class="sync-status-dot" id="syncStatusDot"></span>
           <span id="syncStatusText">Sin cargar datos todavía</span>
         </div>
+        <button type="button" class="btn-action btn-force-sync" id="btnForceSync">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
+          Forzar envío al Excel
+        </button>
+        <button type="button" class="btn-action btn-force-download" id="btnForceDownload">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12l7 7 7-7"/></svg>
+          Forzar descarga del Excel
+        </button>
+        <button type="button" class="btn-action btn-seed635" id="btnSeed635">
+          Cargar datos 63_5 (una vez)
+        </button>
         <button type="button" class="btn-action btn-excel" id="btnExportExcel">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
           Exportar a Excel (.CSV)
@@ -1658,6 +1681,55 @@
       syncToSheets();
     }
 
+    // "Forzar descarga": trae de la Sheet lo último cargado para ESTE puesto (el de
+    // appState.puesto) y reemplaza los datos locales. Útil si otro operador del mismo
+    // puesto cargó algo desde otro celular y este todavía no lo tiene.
+    async function forceDownloadNow() {
+      if (syncDebounceTimer) {
+        const seguir = confirm('Tenés cambios sin enviar todavía en este celular. Si bajás ahora los datos del Excel, esos cambios sin enviar se van a perder.\n\n¿Confirmás que querés bajar igual?');
+        if (!seguir) return;
+      }
+
+      try {
+        const res = await fetch(SHEETS_CSV_URL, { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const csvText = await res.text();
+        const rows = parseCSV(csvText).slice(1).filter(r => r.length >= 7 && r.some(cell => (cell || '').trim() !== ''));
+
+        const newDataByDate = {};
+        let total = 0;
+        rows.forEach(r => {
+          const fechaRaw = (r[0] || '').trim();
+          const hora = (r[1] || '').trim();
+          const puesto = (r[2] || '').trim();
+          if (puesto !== appState.puesto) return;
+          const catId = resolveCatId(r[4], r[5]);
+          const cantidad = parseInt(r[6], 10) || 0;
+          const detalle = (r[7] || '').trim();
+          const fechaISO = resolveRowFechaISO(fechaRaw, r[8]);
+          if (!fechaISO || !hora || !catId) return;
+
+          if (!newDataByDate[fechaISO]) newDataByDate[fechaISO] = {};
+          if (!newDataByDate[fechaISO][hora]) newDataByDate[fechaISO][hora] = {};
+          newDataByDate[fechaISO][hora][catId] = { count: cantidad, details: detalle };
+          total += cantidad;
+        });
+
+        clearTimeout(syncDebounceTimer);
+        syncDebounceTimer = null;
+        appState.dataByDate = newDataByDate;
+        appState.selectedDate = appState.currentRealDate;
+        appState.selectedHour = appState.currentRealHour;
+        ensureHourData(appState.currentRealDate, appState.currentRealHour);
+
+        saveState();
+        renderScreen();
+        alert(`Datos de "${appState.puesto}" actualizados desde el Excel. Total de la jornada: ${total}.`);
+      } catch (err) {
+        alert('No se pudo bajar los datos del Excel. Revisá la conexión e intentá de nuevo.\n' + String(err && err.message || err));
+      }
+    }
+
     // ESTADO COMBINADO: lee la Sheet publicada (solo lectura, no toca appState ni el Apps Script)
     function escapeHtml(str) {
       return String(str)
@@ -1802,6 +1874,42 @@
       alert(`Te uniste a "${puestoName}". Se importaron ${totalImported} atenciones.\n\nSi hace falta, actualizá el Operador desde el botón "Cambiar" del menú.`);
     }
 
+    // Carga de una sola vez: lo que estaba en la planilla de papel del puesto 63 (franjas
+    // 14-16, 16-18 y 18-20) pero nunca llegó a cargarse en la app. Cambia este celular al
+    // puesto "63_5" y deja esas 3 franjas con los totales reales, para seguir desde ahí.
+    // Botón temporal: una vez confirmado que llegó bien al Excel, se saca de la UI.
+    const SEED_635_DONE_KEY = 'cruz_roja_seed_635_done_v1';
+
+    function loadSeed635() {
+      if (localStorage.getItem(SEED_635_DONE_KEY)) {
+        alert('Ya se cargaron los datos de "63_5" en este celular.');
+        return;
+      }
+      const ok = confirm('Esto va a:\n\n1) Cambiar el Puesto de este celular a "63_5"\n2) Cargar las franjas 14:00-16:00, 16:00-18:00 y 18:00-20:00 con los totales de la planilla de papel\n3) Enviarlo al Excel ahora mismo\n\n¿Confirmás?');
+      if (!ok) return;
+
+      const fechaISO = '2026-10-03';
+      const seedBlocks = {
+        '14:00-16:00': { 1: 16, 2: 2, 3: 14, 6: 3 },
+        '16:00-18:00': { 1: 13, 2: 3, 3: 12, 5: 2, 6: 1 },
+        '18:00-20:00': { 1: 7, 2: 2, 3: 10, 5: 4, 6: 3, 10: 1 }
+      };
+
+      appState.puesto = '63_5';
+      Object.keys(seedBlocks).forEach(hora => {
+        const hourData = ensureHourData(fechaISO, hora);
+        Object.keys(seedBlocks[hora]).forEach(catId => {
+          hourData[catId] = { count: seedBlocks[hora][catId], details: '' };
+        });
+      });
+
+      localStorage.setItem(SEED_635_DONE_KEY, '1');
+      saveState();
+      renderScreen();
+      syncNow();
+      alert('Listo: Puesto cambiado a "63_5" y las 3 franjas cargadas. Enviando al Excel ahora.');
+    }
+
     function renderCombinedStatus(rows, rawText) {
       const body = document.getElementById('combinedModalBody');
 
@@ -1934,6 +2042,11 @@
         const btn = e.target.closest('.btn-join-puesto');
         if (btn) joinPuesto(btn.getAttribute('data-puesto'));
       });
+
+      // Forzar envío / descarga / carga única de 63_5
+      document.getElementById('btnForceSync').addEventListener('click', syncNow);
+      document.getElementById('btnForceDownload').addEventListener('click', forceDownloadNow);
+      document.getElementById('btnSeed635').addEventListener('click', loadSeed635);
 
       // Exportaciones
       document.getElementById('btnExportExcel').addEventListener('click', exportToCSV);
