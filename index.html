@@ -952,7 +952,7 @@
           Forzar descarga del Excel
         </button>
         <button type="button" class="btn-action btn-seed635" id="btnSeed635">
-          Cargar datos 63_5 (una vez)
+          Cargar planilla 63 como "635" (una vez)
         </button>
         <button type="button" class="btn-action btn-excel" id="btnExportExcel">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
@@ -1019,7 +1019,16 @@
     const SYNC_SECRET = '73f9b7e5d9136e94e265d271556ffdb7b94c3f67';
     // Lectura pública de la Sheet (función nativa de Google Sheets, no pasa por el Apps Script).
     // Requiere que la Sheet esté compartida como "Cualquier persona con el enlace".
-    const SHEETS_CSV_URL = 'https://docs.google.com/spreadsheets/d/1vpmWEKTvSfP6c7IWAwT6wsWKK_WxWkopn0t2Nwvybzg/gviz/tq?tqx=out:csv&sheet=Registros';
+    // OJO: esta lectura (gviz) decide el tipo de cada columna por mayoría y devuelve VACÍO
+    // las celdas de otro tipo. Como la Sheet convierte "08:00" en hora y "63" en número,
+    // un puesto con letras ("63_5") o una hora tipo "14:00-16:00" llegan vacíos acá.
+    // Por eso la app usa solo horas "HH:00" y conviene que los puestos sean números.
+    const SHEETS_CSV_URL = 'https://docs.google.com/spreadsheets/d/1vpmWEKTvSfP6c7IWAwT6wsWKK_WxWkopn0t2Nwvybzg/gviz/tq?tqx=out:csv&headers=1&sheet=Registros';
+    // Cada cuánto se baja solo lo último del Excel para el puesto de este celular
+    const AUTO_PULL_MS = 60 * 1000;
+    // Un cambio hecho en este celular se respeta por sobre el Excel durante este lapso
+    // después de enviado (lo que tarda la Sheet en reflejarlo en la lectura).
+    const LOCAL_EDIT_PROTECT_MS = 3 * 60 * 1000;
     let appState = {
       puesto: '',
       operador: '',
@@ -1029,7 +1038,10 @@
       currentRealDate: null,
       currentRealHour: null,
       isEditUnlocked: false,
-      filterActiveOnly: false
+      filterActiveOnly: false,
+      // Cambios hechos en ESTE celular: "fecha|hora|catId" -> { at, sentAt }.
+      // El sync automático manda solo estos (no pisa lo que cargaron otros celulares).
+      localEdits: {}
     };
 
     // FORMATEADORES DE FECHA/HORA
@@ -1038,15 +1050,24 @@
       return `${h}:00`;
     }
 
-    // Bloques de 2 horas (16:00-18:00, 18:00-20:00, ...). Usado para todo lo nuevo
-    // a partir de ahora; lo ya cargado en bloques de 1 hora queda intacto con su
-    // formato viejo (sigue viéndose y exportándose igual, solo cambia el ancho del
-    // bloque para los registros nuevos).
-    function formatHourBlockString(date) {
-      const h = date.getHours();
-      const blockStart = Math.floor(h / 2) * 2;
-      const blockEnd = blockStart + 2;
-      return `${String(blockStart).padStart(2, '0')}:00-${String(blockEnd).padStart(2, '0')}:00`;
+    // Lleva cualquier hora que venga de la Sheet o de versiones viejas a "HH:00":
+    // "8:00" / "8:00:00" -> "08:00"; bloque "20:00-22:00" -> "20:00" (su hora de inicio).
+    function normalizeHora(raw) {
+      const s = String(raw || '').trim();
+      let m = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(s);
+      if (m) return `${m[1].padStart(2, '0')}:00`;
+      m = /^(\d{1,2}):00-\d{1,2}:00$/.exec(s);
+      if (m) return `${m[1].padStart(2, '0')}:00`;
+      return null;
+    }
+
+    function editKey(fecha, hora, catId) {
+      return `${fecha}|${hora}|${catId}`;
+    }
+
+    function markLocalEdit(fecha, hora, catId) {
+      if (!appState.localEdits) appState.localEdits = {};
+      appState.localEdits[editKey(fecha, hora, catId)] = { at: Date.now(), sentAt: null };
     }
 
     function formatDateISO(date) {
@@ -1085,7 +1106,7 @@
 
       const now = new Date();
       const todayISO = formatDateISO(now);
-      const currentH = formatHourBlockString(now);
+      const currentH = formatHourString(now);
 
       // Migración desde el formato anterior (sin fecha, todo era "hoy")
       if (appState.dataByHour && !appState.dataByDate) {
@@ -1096,6 +1117,8 @@
         appState.dataByDate = {};
       }
 
+      migrateHourKeys();
+
       appState.currentRealDate = todayISO;
       appState.currentRealHour = currentH;
 
@@ -1105,12 +1128,40 @@
         appState.selectedDate = todayISO;
         appState.selectedHour = currentH;
       }
+      appState.selectedHour = normalizeHora(appState.selectedHour) || currentH;
 
       // Si ya hay puesto guardado, ocultar modal
       if (appState.puesto || appState.operador) {
         const modal = document.getElementById('startModal');
         if (modal) modal.style.display = 'none';
       }
+    }
+
+    // Versiones anteriores guardaban horas como "8:00" (leídas de la Sheet) o como bloques
+    // "20:00-22:00". Todo pasa a "HH:00". Lo que estaba en bloques nunca se pudo leer desde
+    // la Sheet, así que queda marcado para reenviarse en el formato que sí se lee.
+    function migrateHourKeys() {
+      if (!appState.localEdits) appState.localEdits = {};
+      Object.keys(appState.dataByDate).forEach(fecha => {
+        const day = appState.dataByDate[fecha];
+        Object.keys(day).forEach(hora => {
+          const target = normalizeHora(hora);
+          if (!target || target === hora) return;
+          const isBlock = hora.includes('-');
+          const src = day[hora];
+          const dst = day[target] || (day[target] = {});
+          Object.keys(src).forEach(catId => {
+            const s = src[catId] || {};
+            const d = dst[catId] || { count: 0, details: '' };
+            const sCount = s.count || 0;
+            d.count = isBlock ? (d.count || 0) + sCount : Math.max(d.count || 0, sCount);
+            if (s.details && !d.details) d.details = s.details;
+            dst[catId] = d;
+            if (isBlock && sCount > 0) markLocalEdit(fecha, target, catId);
+          });
+          delete day[hora];
+        });
+      });
     }
 
     function createEmptyHourData() {
@@ -1135,19 +1186,53 @@
       const puestoVal = document.getElementById('inputPuesto').value.trim();
       const opVal = document.getElementById('inputOperador').value.trim();
 
-      appState.puesto = puestoVal || 'Puesto General';
+      const prevPuesto = appState.puesto;
+      const newPuesto = puestoVal || 'Puesto General';
+      const puestoChanged = !!prevPuesto && newPuesto !== prevPuesto;
+
+      if (puestoChanged && hasLocalData()) {
+        const llevar = confirm(`Cambiaste el puesto de "${prevPuesto}" a "${newPuesto}".\n\nACEPTAR: pasar al puesto nuevo los datos cargados en este celular.\nCANCELAR: empezar "${newPuesto}" con lo que ya tenga en el Excel (lo de "${prevPuesto}" sigue guardado en el Excel).`);
+        if (llevar) {
+          markAllLocalDataAsEdits();
+        } else {
+          appState.dataByDate = {};
+          appState.localEdits = {};
+        }
+      }
+
+      appState.puesto = newPuesto;
       appState.operador = opVal || 'Voluntario';
+      ensureHourData(appState.currentRealDate, appState.currentRealHour);
+      ensureHourData(appState.selectedDate, appState.selectedHour);
 
       if (puestoVal) saveToHistory('puestos', puestoVal);
       if (opVal) saveToHistory('operadores', opVal);
 
       saveState();
+      renderScreen();
       syncNow();
+      if (puestoChanged) pullFromSheet({ manual: false });
 
       const modal = document.getElementById('startModal');
       if (modal) {
         modal.style.display = 'none';
       }
+    }
+
+    function hasLocalData() {
+      return Object.values(appState.dataByDate).some(day =>
+        Object.values(day).some(h => Object.values(h).some(item => (item.count || 0) > 0)));
+    }
+
+    function markAllLocalDataAsEdits() {
+      Object.keys(appState.dataByDate).forEach(fecha => {
+        Object.keys(appState.dataByDate[fecha]).forEach(hora => {
+          const h = appState.dataByDate[fecha][hora];
+          Object.keys(h).forEach(catId => {
+            if ((h[catId].count || 0) > 0) markLocalEdit(fecha, hora, catId);
+          });
+        });
+      });
     }
 
     // HISTORIAL DE PUESTOS/OPERADORES (persiste aparte del appState, sobrevive a "Reiniciar Guardia")
@@ -1219,7 +1304,7 @@
       setInterval(() => {
         const now = new Date();
         const nowDate = formatDateISO(now);
-        const nowH = formatHourBlockString(now);
+        const nowH = formatHourString(now);
         if (nowDate !== appState.currentRealDate || nowH !== appState.currentRealHour) {
           appState.currentRealDate = nowDate;
           appState.currentRealHour = nowH;
@@ -1240,6 +1325,7 @@
 
       const newCount = Math.max(0, hourData[catId].count + delta);
       hourData[catId].count = newCount;
+      markLocalEdit(appState.selectedDate, appState.selectedHour, catId);
       saveState();
       scheduleDebouncedSync();
       updateCategoryUI(catId);
@@ -1253,6 +1339,7 @@
       if (!hourData[catId]) hourData[catId] = { count: 0, details: '' };
 
       hourData[catId].count = cleanVal;
+      markLocalEdit(appState.selectedDate, appState.selectedHour, catId);
       saveState();
       scheduleDebouncedSync();
       updateCategoryUI(catId);
@@ -1263,6 +1350,7 @@
       const hourData = ensureHourData(appState.selectedDate, appState.selectedHour);
       if (hourData[catId]) {
         hourData[catId].details = text;
+        markLocalEdit(appState.selectedDate, appState.selectedHour, catId);
         saveState();
         scheduleDebouncedSync();
       }
@@ -1369,7 +1457,7 @@
       if (cat.id === 21) {
         detailsHTML = `
           <div class="cat-details-expand" id="cat-details-21" style="display: ${count > 0 ? 'block' : 'none'}">
-            <textarea placeholder="Detallar patología, observaciones o derivaciones..." ${locked ? 'readonly' : ''} oninput="updateDetails(21, this.value)">${details}</textarea>
+            <textarea placeholder="Detallar patología, observaciones o derivaciones..." ${locked ? 'readonly' : ''} oninput="updateDetails(21, this.value)">${escapeHtml(details)}</textarea>
           </div>
         `;
       }
@@ -1405,12 +1493,12 @@
     function changeHour(step) {
       const cur = dateHourToTimestamp(appState.selectedDate, appState.selectedHour);
       const real = dateHourToTimestamp(appState.currentRealDate, appState.currentRealHour);
-      let next = cur + step * 2 * 60 * 60 * 1000; // bloques de 2hs
+      let next = cur + step * 60 * 60 * 1000;
       if (next > real) next = real; // no se puede navegar al futuro
 
       const nextDate = new Date(next);
       appState.selectedDate = formatDateISO(nextDate);
-      appState.selectedHour = formatHourBlockString(nextDate);
+      appState.selectedHour = formatHourString(nextDate);
       appState.isEditUnlocked = false;
       renderScreen();
       syncNow();
@@ -1499,7 +1587,7 @@
 
         card.innerHTML = `
           <div class="history-card-header">
-            <span class="history-time">${formatDateDisplay(fecha)} ${hora} ${isNow ? '• (Ahora)' : ''}</span>
+            <span class="history-time">${formatDateDisplay(fecha)} ${escapeHtml(hora)} ${isNow ? '• (Ahora)' : ''}</span>
             <span class="history-count">${totalH} pac.</span>
           </div>
           <div class="history-categories-tags">
@@ -1570,60 +1658,77 @@
     }
 
     // SINCRONIZACIÓN AUTOMÁTICA CON GOOGLE SHEETS
-    function buildSyncPayload() {
+    // sendAll=false (automático): solo lo que se cambió en este celular y todavía no se mandó,
+    // incluso si quedó en 0 (para que una resta también llegue al Excel).
+    // sendAll=true ("Forzar envío"): todo lo que tiene este celular, sin excepción.
+    function buildSyncPayload(sendAll) {
+      const edits = appState.localEdits || {};
       const registros = [];
+      const sentKeys = [];
       Object.keys(appState.dataByDate).sort().forEach(fecha => {
         const dayData = appState.dataByDate[fecha];
         Object.keys(dayData).sort().forEach(hora => {
+          if (!normalizeHora(hora)) return;
           const hourData = dayData[hora];
           OFFICIAL_CATEGORIES.forEach(cat => {
+            const key = editKey(fecha, hora, cat.id);
             const item = hourData[cat.id];
             const cantidad = item?.count || 0;
-            if (cantidad >= 1) {
-              registros.push({
-                fecha: formatDateDisplay(fecha),
-                hora,
-                catId: cat.id,
-                catName: cat.name,
-                cantidad,
-                detalle: item.details || ''
-              });
-            }
+            const pending = edits[key] && !edits[key].sentAt;
+            if (!pending && !(sendAll && cantidad >= 1)) return;
+            registros.push({
+              fecha: formatDateDisplay(fecha),
+              hora,
+              catId: cat.id,
+              catName: cat.name,
+              cantidad,
+              detalle: item?.details || ''
+            });
+            sentKeys.push(key);
           });
         });
       });
 
       return {
-        secret: SYNC_SECRET,
-        puesto: appState.puesto,
-        operador: appState.operador,
-        registros
+        payload: { secret: SYNC_SECRET, puesto: appState.puesto, operador: appState.operador, registros },
+        sentKeys
       };
     }
 
     // Estado del sync, solo para mostrar en pantalla (no se persiste, no hace falta sobrevivir a un reload)
     let syncStatus = { lastAttemptAt: null, lastOkAt: null, consecutiveFailures: 0 };
 
-    function syncToSheets() {
-      const payload = buildSyncPayload();
-      if (payload.registros.length === 0) return;
+    // Devuelve la cantidad de registros enviados (0 si no había nada), o null si falló la red.
+    function syncToSheets(sendAll) {
+      const { payload, sentKeys } = buildSyncPayload(!!sendAll);
+      if (payload.registros.length === 0) return Promise.resolve(0);
 
-      syncStatus.lastAttemptAt = Date.now();
+      const startedAt = Date.now();
+      syncStatus.lastAttemptAt = startedAt;
 
-      fetch(SHEETS_WEBAPP_URL, {
+      return fetch(SHEETS_WEBAPP_URL, {
         method: 'POST',
         mode: 'no-cors',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(payload)
       }).then(() => {
         // mode:'no-cors' no deja leer si Sheets lo aceptó, pero esto confirma que la red anduvo
-        syncStatus.lastOkAt = Date.now();
+        const edits = appState.localEdits || {};
+        const now = Date.now();
+        sentKeys.forEach(k => {
+          // Si se volvió a tocar mientras viajaba el envío, queda pendiente para el próximo
+          if (edits[k] && edits[k].at <= startedAt) edits[k].sentAt = now;
+        });
+        saveState();
+        syncStatus.lastOkAt = now;
         syncStatus.consecutiveFailures = 0;
         updateSyncStatusUI();
+        return payload.registros.length;
       }).catch(err => {
         console.warn('Error al sincronizar con Sheets:', err);
         syncStatus.consecutiveFailures++;
         updateSyncStatusUI();
+        return null;
       });
     }
 
@@ -1678,56 +1783,165 @@
     function syncNow() {
       clearTimeout(syncDebounceTimer);
       syncDebounceTimer = null;
-      syncToSheets();
+      return syncToSheets(false);
     }
 
-    // "Forzar descarga": trae de la Sheet lo último cargado para ESTE puesto (el de
-    // appState.puesto) y reemplaza los datos locales. Útil si otro operador del mismo
-    // puesto cargó algo desde otro celular y este todavía no lo tiene.
+    // "Forzar envío": manda TODO lo de este celular ya, sin esperar nada.
+    async function forceSyncNow() {
+      clearTimeout(syncDebounceTimer);
+      syncDebounceTimer = null;
+      const enviados = await syncToSheets(true);
+      if (enviados === null) {
+        alert('No se pudo enviar (sin conexión). Los datos siguen guardados en el celular; probá de nuevo en un rato.');
+      } else if (enviados === 0) {
+        alert('No hay nada cargado en este celular para enviar.');
+      } else {
+        alert(`Enviado al Excel: ${enviados} registros de "${appState.puesto}".\n\nPuede tardar hasta 1 minuto en verse en "Estado combinado".`);
+      }
+    }
+
+    // LECTURA DE LA SHEET
+    // "Última actualización" viene como "3/10/2026 21:22:05" (D/M/YYYY).
+    function parseTimestampMs(tsRaw) {
+      const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(String(tsRaw || '').trim());
+      if (!m) return 0;
+      return new Date(+m[3], +m[2] - 1, +m[1], +m[4], +m[5], +(m[6] || 0)).getTime();
+    }
+
+    // El Apps Script no logra pisar la fila existente (compara una fecha/hora que la Sheet
+    // convirtió en fecha/hora contra el texto que llega), así que cada envío AGREGA filas.
+    // Por eso acá nos quedamos con la fila más nueva de cada puesto+fecha+hora+categoría.
+    function sheetRowsToRecords(rows) {
+      const byKey = new Map();
+      rows.forEach((r, idx) => {
+        const hora = normalizeHora(r[1]);
+        const puesto = (r[2] || '').trim();
+        const catId = resolveCatId(r[4], r[5]);
+        const fechaISO = resolveRowFechaISO(r[0], r[8]);
+        if (!hora || !puesto || !catId || !fechaISO) return;
+        const key = `${fechaISO}|${hora}|${puesto}|${catId}`;
+        const ts = parseTimestampMs(r[8]);
+        const prev = byKey.get(key);
+        if (prev && prev.ts > ts) return; // a igual hora de guardado gana la fila de más abajo
+        byKey.set(key, {
+          fechaISO, hora, puesto, catId, ts, idx,
+          cantidad: Math.max(0, parseInt(r[6], 10) || 0),
+          detalle: (r[7] || '').trim()
+        });
+      });
+      return [...byKey.values()];
+    }
+
+    async function fetchSheetRecords() {
+      const res = await fetch(SHEETS_CSV_URL, { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const csvText = await res.text();
+      const rows = parseCSV(csvText).slice(1).filter(r => r.length >= 7 && r.some(cell => (cell || '').trim() !== ''));
+      return { records: sheetRowsToRecords(rows), csvText };
+    }
+
+    function samePuesto(a, b) {
+      return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+    }
+
+    function recordsToDataByDate(records, puesto) {
+      const dataByDate = {};
+      let total = 0;
+      let found = 0;
+      records.forEach(rec => {
+        if (!samePuesto(rec.puesto, puesto)) return;
+        found++;
+        if (!dataByDate[rec.fechaISO]) dataByDate[rec.fechaISO] = {};
+        if (!dataByDate[rec.fechaISO][rec.hora]) dataByDate[rec.fechaISO][rec.hora] = {};
+        dataByDate[rec.fechaISO][rec.hora][rec.catId] = { count: rec.cantidad, details: rec.detalle };
+        total += rec.cantidad;
+      });
+      return { dataByDate, total, found };
+    }
+
+    // Forma comparable de los datos (ignora ceros vacíos) para saber si algo cambió de verdad
+    function canonicalData(dataByDate) {
+      const parts = [];
+      Object.keys(dataByDate).sort().forEach(f => {
+        Object.keys(dataByDate[f]).sort().forEach(h => {
+          Object.keys(dataByDate[f][h]).sort().forEach(c => {
+            const it = dataByDate[f][h][c] || {};
+            if ((it.count || 0) > 0 || it.details) parts.push(`${f}|${h}|${c}|${it.count || 0}|${it.details || ''}`);
+          });
+        });
+      });
+      return parts.join('\n');
+    }
+
+    // Trae lo último del Excel para el puesto de este celular.
+    // Automático: respeta lo que se tocó en este celular hace poco (todavía no llegó a verse
+    // en la Sheet). Manual ("Forzar descarga"): el Excel manda, pisa todo lo local.
+    let pullInFlight = false;
+
+    async function pullFromSheet({ manual }) {
+      if (pullInFlight || !appState.puesto) return;
+      pullInFlight = true;
+      try {
+        let records;
+        try {
+          ({ records } = await fetchSheetRecords());
+        } catch (err) {
+          if (manual) alert('No se pudo bajar los datos del Excel. Revisá la conexión e intentá de nuevo.\n' + String(err && err.message || err));
+          return;
+        }
+
+        const { dataByDate, total, found } = recordsToDataByDate(records, appState.puesto);
+        if (found === 0) {
+          // Nunca vaciamos el celular porque la lectura no trajo nada (puede ser demora de
+          // Google o un puesto que todavía no subió nada).
+          if (manual) alert(`Todavía no hay nada de "${appState.puesto}" en el Excel (o Google todavía no lo muestra). No se tocó nada de lo que tenés en el celular.`);
+          return;
+        }
+
+        if (!manual) {
+          const edits = appState.localEdits || {};
+          const now = Date.now();
+          Object.keys(edits).forEach(key => {
+            const e = edits[key];
+            if (e.sentAt && now - e.sentAt > LOCAL_EDIT_PROTECT_MS) { delete edits[key]; return; }
+            const [fecha, hora, catId] = key.split('|');
+            const local = appState.dataByDate[fecha]?.[hora]?.[catId];
+            if (!dataByDate[fecha]) dataByDate[fecha] = {};
+            if (!dataByDate[fecha][hora]) dataByDate[fecha][hora] = {};
+            dataByDate[fecha][hora][catId] = local ? { count: local.count || 0, details: local.details || '' } : { count: 0, details: '' };
+          });
+          // Si alguien está escribiendo justo ahora, no le cambiamos la pantalla: va en la próxima
+          const typing = document.activeElement && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName);
+          if (typing) return;
+        } else {
+          appState.localEdits = {};
+          clearTimeout(syncDebounceTimer);
+          syncDebounceTimer = null;
+        }
+
+        const changed = canonicalData(dataByDate) !== canonicalData(appState.dataByDate);
+        if (changed) {
+          appState.dataByDate = dataByDate;
+          ensureHourData(appState.currentRealDate, appState.currentRealHour);
+          ensureHourData(appState.selectedDate, appState.selectedHour);
+          saveState();
+          renderScreen();
+          if (document.getElementById('drawerOverlay').classList.contains('active')) renderDrawerHistory();
+        }
+        if (manual) alert(`Datos de "${appState.puesto}" actualizados desde el Excel. Total: ${total} atenciones.`);
+      } finally {
+        pullInFlight = false;
+      }
+    }
+
     async function forceDownloadNow() {
-      if (syncDebounceTimer) {
-        const seguir = confirm('Tenés cambios sin enviar todavía en este celular. Si bajás ahora los datos del Excel, esos cambios sin enviar se van a perder.\n\n¿Confirmás que querés bajar igual?');
+      const pendientes = Object.values(appState.localEdits || {}).some(e => !e.sentAt);
+      if (pendientes) {
+        const seguir = confirm('Tenés cambios en este celular que todavía no se enviaron. Si bajás ahora, el Excel pisa esos cambios.\n\n¿Bajar igual?');
         if (!seguir) return;
       }
-
-      try {
-        const res = await fetch(SHEETS_CSV_URL, { cache: 'no-store' });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const csvText = await res.text();
-        const rows = parseCSV(csvText).slice(1).filter(r => r.length >= 7 && r.some(cell => (cell || '').trim() !== ''));
-
-        const newDataByDate = {};
-        let total = 0;
-        rows.forEach(r => {
-          const fechaRaw = (r[0] || '').trim();
-          const hora = (r[1] || '').trim();
-          const puesto = (r[2] || '').trim();
-          if (puesto !== appState.puesto) return;
-          const catId = resolveCatId(r[4], r[5]);
-          const cantidad = parseInt(r[6], 10) || 0;
-          const detalle = (r[7] || '').trim();
-          const fechaISO = resolveRowFechaISO(fechaRaw, r[8]);
-          if (!fechaISO || !hora || !catId) return;
-
-          if (!newDataByDate[fechaISO]) newDataByDate[fechaISO] = {};
-          if (!newDataByDate[fechaISO][hora]) newDataByDate[fechaISO][hora] = {};
-          newDataByDate[fechaISO][hora][catId] = { count: cantidad, details: detalle };
-          total += cantidad;
-        });
-
-        clearTimeout(syncDebounceTimer);
-        syncDebounceTimer = null;
-        appState.dataByDate = newDataByDate;
-        appState.selectedDate = appState.currentRealDate;
-        appState.selectedHour = appState.currentRealHour;
-        ensureHourData(appState.currentRealDate, appState.currentRealHour);
-
-        saveState();
-        renderScreen();
-        alert(`Datos de "${appState.puesto}" actualizados desde el Excel. Total de la jornada: ${total}.`);
-      } catch (err) {
-        alert('No se pudo bajar los datos del Excel. Revisá la conexión e intentá de nuevo.\n' + String(err && err.message || err));
-      }
+      closeDrawer();
+      await pullFromSheet({ manual: true });
     }
 
     // ESTADO COMBINADO: lee la Sheet publicada (solo lectura, no toca appState ni el Apps Script)
@@ -1777,7 +1991,7 @@
       document.getElementById('combinedModal').style.display = 'none';
     }
 
-    let lastCombinedRows = []; // filas crudas del último fetch, para poder "unirse" a un puesto sin refetchear
+    let lastCombinedRecords = []; // del último fetch, para poder "unirse" a un puesto sin refetchear
 
     async function fetchCombinedStatus() {
       openCombinedModal();
@@ -1785,17 +1999,11 @@
       body.innerHTML = '<p class="combined-loading">Cargando datos de la Sheet…</p>';
 
       try {
-        const res = await fetch(SHEETS_CSV_URL, { cache: 'no-store' });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const csvText = await res.text();
-        // No exigimos r[0] (Fecha): las filas viejas la traen vacía y las recuperamos
-        // más adelante desde "Última actualización". Igual filtramos filas totalmente
-        // vacías (ninguna columna con contenido) para no arrastrar basura.
-        const rows = parseCSV(csvText).slice(1).filter(r => r.length >= 7 && r.some(cell => (cell || '').trim() !== ''));
-        lastCombinedRows = rows;
-        renderCombinedStatus(rows, csvText);
+        const { records, csvText } = await fetchSheetRecords();
+        lastCombinedRecords = records;
+        renderCombinedStatus(records, csvText);
       } catch (err) {
-        lastCombinedRows = [];
+        lastCombinedRecords = [];
         body.innerHTML = `<p class="combined-error">No se pudo traer el estado combinado. Revisá la conexión e intentá de nuevo.<br><small>${escapeHtml(String(err && err.message || err))}</small></p>`;
       }
     }
@@ -1833,84 +2041,70 @@
       const ok = confirm(`¿Unirte al puesto "${puestoName}"?\n\nEsto va a REEMPLAZAR los datos que tenés cargados en este celular por los de ese puesto (traídos de la Sheet). No se puede deshacer.`);
       if (!ok) return;
 
-      const newDataByDate = {};
-      let totalImported = 0;
-      let omitidas = 0;
+      const { dataByDate, total } = recordsToDataByDate(lastCombinedRecords, puestoName);
 
-      lastCombinedRows.forEach(r => {
-        const fechaRaw = (r[0] || '').trim();
-        const hora = (r[1] || '').trim();
-        const puesto = (r[2] || '').trim();
-        const catId = resolveCatId(r[4], r[5]);
-        const cantidad = parseInt(r[6], 10) || 0;
-        const detalle = (r[7] || '').trim();
-
-        if (puesto !== puestoName) return;
-        const fechaISO = resolveRowFechaISO(fechaRaw, r[8]);
-        if (!fechaISO || !hora || !catId) { omitidas++; return; }
-
-        if (!newDataByDate[fechaISO]) newDataByDate[fechaISO] = {};
-        if (!newDataByDate[fechaISO][hora]) newDataByDate[fechaISO][hora] = {};
-        newDataByDate[fechaISO][hora][catId] = { count: cantidad, details: detalle };
-        totalImported += cantidad;
-      });
-
-      if (omitidas > 0) {
-        console.warn(`joinPuesto: se omitieron ${omitidas} filas con fecha/hora/categoría en formato inesperado.`);
-      }
-
-      appState.dataByDate = newDataByDate;
+      appState.dataByDate = dataByDate;
+      appState.localEdits = {};
       appState.puesto = puestoName;
       appState.selectedDate = appState.currentRealDate;
       appState.selectedHour = appState.currentRealHour;
       appState.isEditUnlocked = false;
       ensureHourData(appState.currentRealDate, appState.currentRealHour);
+      clearTimeout(syncDebounceTimer);
+      syncDebounceTimer = null;
 
       saveState();
       closeCombinedModal();
       renderScreen();
-      syncNow();
 
-      alert(`Te uniste a "${puestoName}". Se importaron ${totalImported} atenciones.\n\nSi hace falta, actualizá el Operador desde el botón "Cambiar" del menú.`);
+      alert(`Te uniste a "${puestoName}". Se importaron ${total} atenciones.\n\nSi hace falta, actualizá el Operador desde el botón "Cambiar" del menú.`);
     }
 
-    // Carga de una sola vez: lo que estaba en la planilla de papel del puesto 63 (franjas
-    // 14-16, 16-18 y 18-20) pero nunca llegó a cargarse en la app. Cambia este celular al
-    // puesto "63_5" y deja esas 3 franjas con los totales reales, para seguir desde ahí.
-    // Botón temporal: una vez confirmado que llegó bien al Excel, se saca de la UI.
-    const SEED_635_DONE_KEY = 'cruz_roja_seed_635_done_v1';
+    // Carga única: la planilla de papel completa del puesto 63 hasta las 20hs (134 atenciones),
+    // como puesto nuevo "635". Cada franja del papel va en su hora de inicio. Botón temporal:
+    // cuando se confirme que llegó bien al Excel, se saca.
+    const SEED_PUESTO = '635';
+    const SEED_FECHA = '2026-10-03';
+    const SEED_DATA = {
+      '07:00': { 1: 10, 2: 2, 3: 3, 5: 1, 9: 2, 12: 2 },  // franja 07-12 = 20
+      '12:00': { 1: 6, 2: 1, 3: 8, 5: 2, 6: 3, 9: 1 },    // franja 12-14 = 21
+      '14:00': { 1: 15, 2: 2, 3: 14, 6: 3, 20: 1 },       // franja 14-16 = 35
+      '16:00': { 1: 13, 2: 3, 3: 12, 5: 2, 6: 1 },        // franja 16-18 = 31
+      '18:00': { 1: 7, 2: 2, 3: 10, 5: 4, 6: 3, 10: 1 }   // franja 18-20 = 27
+    };
 
-    function loadSeed635() {
-      if (localStorage.getItem(SEED_635_DONE_KEY)) {
-        alert('Ya se cargaron los datos de "63_5" en este celular.');
-        return;
-      }
-      const ok = confirm('Esto va a:\n\n1) Cambiar el Puesto de este celular a "63_5"\n2) Cargar las franjas 14:00-16:00, 16:00-18:00 y 18:00-20:00 con los totales de la planilla de papel\n3) Enviarlo al Excel ahora mismo\n\n¿Confirmás?');
+    async function loadSeed635() {
+      const ok = confirm(`Esto va a:\n\n1) Cambiar el Puesto de este celular a "${SEED_PUESTO}"\n2) Reemplazar lo que tiene este celular por la planilla de papel del 63 (07 a 20hs, 134 atenciones)\n3) Enviarlo al Excel ahora mismo\n\nHacelo en UN solo celular. Los demás se suman con "Unirme" en Estado combinado.\n\n¿Confirmás?`);
       if (!ok) return;
 
-      const fechaISO = '2026-10-03';
-      const seedBlocks = {
-        '14:00-16:00': { 1: 16, 2: 2, 3: 14, 6: 3 },
-        '16:00-18:00': { 1: 13, 2: 3, 3: 12, 5: 2, 6: 1 },
-        '18:00-20:00': { 1: 7, 2: 2, 3: 10, 5: 4, 6: 3, 10: 1 }
-      };
-
-      appState.puesto = '63_5';
-      Object.keys(seedBlocks).forEach(hora => {
-        const hourData = ensureHourData(fechaISO, hora);
-        Object.keys(seedBlocks[hora]).forEach(catId => {
-          hourData[catId] = { count: seedBlocks[hora][catId], details: '' };
+      appState.puesto = SEED_PUESTO;
+      appState.dataByDate = {};
+      appState.localEdits = {};
+      Object.keys(SEED_DATA).forEach(hora => {
+        const hourData = ensureHourData(SEED_FECHA, hora);
+        Object.keys(SEED_DATA[hora]).forEach(catId => {
+          hourData[catId] = { count: SEED_DATA[hora][catId], details: '' };
+          markLocalEdit(SEED_FECHA, hora, catId);
         });
       });
+      appState.selectedDate = appState.currentRealDate;
+      appState.selectedHour = appState.currentRealHour;
+      appState.isEditUnlocked = false;
+      ensureHourData(appState.currentRealDate, appState.currentRealHour);
+      saveToHistory('puestos', SEED_PUESTO);
 
-      localStorage.setItem(SEED_635_DONE_KEY, '1');
       saveState();
+      closeDrawer();
       renderScreen();
-      syncNow();
-      alert('Listo: Puesto cambiado a "63_5" y las 3 franjas cargadas. Enviando al Excel ahora.');
+      const enviados = await syncNow();
+      if (enviados === null) {
+        alert(`Cargado en el celular como "${SEED_PUESTO}", pero no se pudo enviar (sin conexión). Se reintenta solo; si no, tocá "Forzar envío al Excel".`);
+      } else {
+        alert(`Listo: "${SEED_PUESTO}" cargado y enviado al Excel (${enviados} registros).\n\nEn 1 minuto debería verse en Estado combinado.`);
+      }
     }
 
-    function renderCombinedStatus(rows, rawText) {
+    function renderCombinedStatus(records, rawText) {
       const body = document.getElementById('combinedModalBody');
 
       // Total consolidado por puesto (lo que el equipo realmente quiere ver primero:
@@ -1922,29 +2116,20 @@
       const groups = {};
       const order = [];
 
-      rows.forEach(r => {
-        let fecha = (r[0] || '').trim();
-        const hora = (r[1] || '').trim();
-        const puesto = (r[2] || '(sin puesto)').trim();
-        const cantidad = parseInt(r[6], 10) || 0;
-        if (!hora || cantidad <= 0) return;
+      records
+        .filter(rec => rec.cantidad > 0)
+        .sort((a, b) => (a.fechaISO + a.hora).localeCompare(b.fechaISO + b.hora))
+        .forEach(rec => {
+          const puesto = rec.puesto;
+          if (!puestoTotals[puesto]) { puestoTotals[puesto] = 0; puestoOrder.push(puesto); }
+          puestoTotals[puesto] += rec.cantidad;
 
-        // Filas viejas (de antes de mandar fecha por registro) la traen vacía:
-        // la recuperamos de "Última actualización" en vez de descartar la fila.
-        if (!fecha) {
-          const fechaISO = parseTimestampDateToISO(r[8]);
-          fecha = fechaISO ? formatDateDisplay(fechaISO) : '(sin fecha)';
-        }
-
-        if (!puestoTotals[puesto]) { puestoTotals[puesto] = 0; puestoOrder.push(puesto); }
-        puestoTotals[puesto] += cantidad;
-
-        const key = `${fecha} · ${hora}`;
-        if (!groups[key]) { groups[key] = { puestos: {}, total: 0 }; order.push(key); }
-        if (!groups[key].puestos[puesto]) groups[key].puestos[puesto] = { total: 0 };
-        groups[key].puestos[puesto].total += cantidad;
-        groups[key].total += cantidad;
-      });
+          const key = `${formatDateDisplay(rec.fechaISO)} · ${rec.hora}`;
+          if (!groups[key]) { groups[key] = { puestos: {}, total: 0 }; order.push(key); }
+          if (!groups[key].puestos[puesto]) groups[key].puestos[puesto] = { total: 0 };
+          groups[key].puestos[puesto].total += rec.cantidad;
+          groups[key].total += rec.cantidad;
+        });
 
       if (order.length === 0) {
         const preview = (rawText || '').slice(0, 300);
@@ -2044,7 +2229,7 @@
       });
 
       // Forzar envío / descarga / carga única de 63_5
-      document.getElementById('btnForceSync').addEventListener('click', syncNow);
+      document.getElementById('btnForceSync').addEventListener('click', forceSyncNow);
       document.getElementById('btnForceDownload').addEventListener('click', forceDownloadNow);
       document.getElementById('btnSeed635').addEventListener('click', loadSeed635);
 
@@ -2063,6 +2248,18 @@
       startClockSync();
       renderScreen();
       syncNow(); // por si quedó algo sin mandar de la última vez que se usó la app
+
+      // Todos ven lo mismo: cada minuto (y al volver a la app) se baja lo último del Excel
+      pullFromSheet({ manual: false });
+      setInterval(() => {
+        if (document.visibilityState === 'visible') pullFromSheet({ manual: false });
+      }, AUTO_PULL_MS);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          syncNow();
+          pullFromSheet({ manual: false });
+        }
+      });
     });
   </script>
 </body>
