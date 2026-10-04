@@ -1077,19 +1077,18 @@
     }
 
     // FRANJAS COMO EN LA PLANILLA DE PAPEL
-    // Día 1: 07-12 (la larga), después de a 2hs (12-14 ... 22-00). Día 2: 00-02 ... 06-08
-    // y "Cierre" de 08 en adelante. Cada franja se guarda con su hora de inicio ("07:00",
-    // "12:00", ...) porque es el único formato que la Sheet deja leer de vuelta.
+    // Solo la primera es larga: 07-12 del día 1. Todo lo demás va de a 2hs (12-14 ... 22-00,
+    // 00-02 ...). Cada franja se guarda con su hora de inicio ("07:00", "12:00", ...) porque
+    // es el único formato que la Sheet deja leer de vuelta.
     const EVENT_START_DATE = '2026-10-03';
 
     function blockStartHour(dateISO, h) {
-      if (dateISO <= EVENT_START_DATE) return h < 12 ? 7 : h - (h % 2);
-      return h < 8 ? h - (h % 2) : 8;
+      if (dateISO <= EVENT_START_DATE && h < 12) return 7;
+      return h - (h % 2);
     }
 
     function blockEndHour(dateISO, start) {
       if (dateISO <= EVENT_START_DATE && start === 7) return 12;
-      if (dateISO > EVENT_START_DATE && start === 8) return 24;
       return start + 2;
     }
 
@@ -1097,11 +1096,10 @@
       return `${String(blockStartHour(dateISO, h)).padStart(2, '0')}:00`;
     }
 
-    // "12:00" -> "12–14", "07:00" (día 1) -> "07–12", "08:00" (día 2) -> "Cierre"
+    // "12:00" -> "12–14", "07:00" (día 1) -> "07–12"
     function blockLabel(dateISO, hourKey) {
       const start = parseInt(hourKey, 10);
       if (isNaN(start)) return hourKey;
-      if (dateISO > EVENT_START_DATE && start === 8) return 'Cierre';
       const end = blockEndHour(dateISO, start) % 24;
       return `${String(start).padStart(2, '0')}–${String(end).padStart(2, '0')}`;
     }
