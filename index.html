@@ -635,6 +635,14 @@
       font-weight: 800;
       color: var(--cr-black);
     }
+    .combined-detail-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--cr-gray-dark);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      margin: 14px 0 8px;
+    }
     .btn-join-puesto {
       background: var(--cr-teal-bg);
       border: 1px solid #CFE6E8;
@@ -1797,8 +1805,12 @@
     function renderCombinedStatus(rows, rawText) {
       const body = document.getElementById('combinedModalBody');
 
-      // Agrupa tal cual viene en la Sheet (por fecha+hora+puesto), sin intentar
-      // re-formatear fechas/horas: así no se rompe si Sheets las reformateó solo.
+      // Total consolidado por puesto (lo que el equipo realmente quiere ver primero:
+      // "¿cuánto lleva el puesto X en total?", sin importar en qué hora se cargó cada cosa).
+      const puestoTotals = {};
+      const puestoOrder = [];
+
+      // Detalle por fecha+hora+puesto, para quien quiera ver el desglose.
       const groups = {};
       const order = [];
 
@@ -1806,7 +1818,6 @@
         let fecha = (r[0] || '').trim();
         const hora = (r[1] || '').trim();
         const puesto = (r[2] || '(sin puesto)').trim();
-        const catName = (r[5] || '').trim();
         const cantidad = parseInt(r[6], 10) || 0;
         if (!hora || cantidad <= 0) return;
 
@@ -1816,6 +1827,9 @@
           const fechaISO = parseTimestampDateToISO(r[8]);
           fecha = fechaISO ? formatDateDisplay(fechaISO) : '(sin fecha)';
         }
+
+        if (!puestoTotals[puesto]) { puestoTotals[puesto] = 0; puestoOrder.push(puesto); }
+        puestoTotals[puesto] += cantidad;
 
         const key = `${fecha} · ${hora}`;
         if (!groups[key]) { groups[key] = { puestos: {}, total: 0 }; order.push(key); }
@@ -1832,8 +1846,19 @@
         return;
       }
 
-      // Lo más reciente (último agregado) primero
-      let html = '';
+      let html = '<div class="combined-block-group">';
+      html += `<div class="combined-block-header"><span>Totales por puesto</span></div>`;
+      puestoOrder.slice().sort().forEach(p => {
+        html += `<div class="combined-puesto-row">
+          <span class="combined-puesto-name">${escapeHtml(p)}</span>
+          <span class="combined-puesto-total">${puestoTotals[p]}</span>
+          <button type="button" class="btn-join-puesto" data-puesto="${escapeHtml(p)}">Unirme</button>
+        </div>`;
+      });
+      html += `</div>`;
+
+      // Detalle por hora, abajo, para quien lo quiera ver. Lo más reciente primero.
+      html += `<div class="combined-detail-label">Detalle por hora</div>`;
       order.slice().reverse().forEach(key => {
         const g = groups[key];
         html += `<div class="combined-block-group">
@@ -1842,7 +1867,6 @@
           html += `<div class="combined-puesto-row">
             <span class="combined-puesto-name">${escapeHtml(p)}</span>
             <span class="combined-puesto-total">${g.puestos[p].total}</span>
-            <button type="button" class="btn-join-puesto" data-puesto="${escapeHtml(p)}">Unirme</button>
           </div>`;
         });
         html += `</div>`;
